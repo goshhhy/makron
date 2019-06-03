@@ -1,8 +1,9 @@
 # makron
-Hi! This is my window manager. It's not really ready for use. I started it a few years back when I was much worse at coding, and I'm surprised I got as far as I did.
+hi! this is my window manager. it's still under development.
 
-I began writing it because I couldn't find any other window managers for X that worked how I wanted - in particular, I would really like an identical implementation of the Stack & Tile window management system from Haiku.
+i started it a few years ago because i couldn't find a window manager that
+did what i wanted, and now i have a window manager that doesn't do what i want.
 
-This project hasn't quite gotten to that point. At the moment, functionality is very basic. It can just barely manage windows. Stack and tile functionality and general desktop usability is a ways away. It'll require some serious work in order to become as usable as I'd like.
+i'm working on rewriting and expanding it so that it works for me.
 
-Check back later! Maybe I'll have it more done.
+it has bare minimum levels of functionality, so you are free to try it out.
