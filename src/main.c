@@ -43,7 +43,16 @@ typedef enum {
 	WMSTATE_CLOSE
 } wmState_t;
 
-typedef struct client_s {
+typedef enum {
+	NODE_ROOT,
+	NODE_CLIENT,
+	NODE_FRAME,
+	NODE_GROUP,
+} nodeType_t;
+
+typedef struct node_s {
+	nodeType_t type;
+
 	xcb_window_t window;
 	xcb_window_t parent;
 
@@ -61,10 +70,10 @@ typedef struct client_s {
 
 	//todo: gravity
 
-	struct client_s *nextClient;
-} client_t;
+	struct node_s *nextNode;
+} node_t;
 
-client_t *firstClient = NULL;
+node_t *firstClient = NULL;
 xcb_connection_t *c;
 xcb_screen_t *screen;
 xcb_generic_event_t *e;
@@ -89,7 +98,7 @@ xcb_atom_t WM_DELETE_WINDOW;
 xcb_atom_t WM_PROTOCOLS;
 
 wmState_t wmState = WMSTATE_IDLE;
-client_t *dragClient;
+node_t *dragClient;
 short dragStartX;
 short dragStartY;
 short mouseLastKnownX;
@@ -113,7 +122,7 @@ void dbgprintf( int level, char* fmt, ... ) {
 	va_end( args );
 }
 
-void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsigned short height ) {
+void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigned short height ) {
 	int nx, ny;
 	unsigned short pmask = 	XCB_CONFIG_WINDOW_X |
 							XCB_CONFIG_WINDOW_Y |
@@ -165,7 +174,7 @@ void ConfigureClient( client_t *n, short x, short y, unsigned short width, unsig
 	xcb_flush( c );
 }
 
-void DrawFrame( client_t *n ) {
+void DrawFrame( node_t *n ) {
 	int i;
 	int textLen = 0, textWidth = 0, textPos = 0;
 	xcb_query_text_extents_reply_t *r;
@@ -222,10 +231,10 @@ void DrawFrame( client_t *n ) {
 	return;
 }
 
-client_t *GetClientByWindow( xcb_window_t w ) {
-	client_t *n = firstClient;
+node_t *GetClientByWindow( xcb_window_t w ) {
+	node_t *n = firstClient;
 
-	for ( ; n != NULL; n = n->nextClient ) {
+	for ( ; n != NULL; n = n->nextNode ) {
 		if ( n->window == w ) {
 			return n;
 		}
@@ -233,10 +242,10 @@ client_t *GetClientByWindow( xcb_window_t w ) {
 	return NULL;
 }
 
-client_t *GetClientByParent( xcb_window_t w ) {
-	client_t *n = firstClient;
+node_t *GetClientByParent( xcb_window_t w ) {
+	node_t *n = firstClient;
 
-	for ( ; n != NULL; n = n->nextClient ) {
+	for ( ; n != NULL; n = n->nextNode ) {
 		if ( n->parent == w ) {
 			return n;
 		}
@@ -244,10 +253,10 @@ client_t *GetClientByParent( xcb_window_t w ) {
 	return NULL;
 }
 
-void RaiseClient( client_t *n ) {
+void RaiseClient( node_t *n ) {
 	unsigned short mask = XCB_CONFIG_WINDOW_STACK_MODE;
 	unsigned int v[1] = { XCB_STACK_MODE_ABOVE };
-	client_t *m = GetClientByParent( activeWindow );
+	node_t *m = GetClientByParent( activeWindow );
 
 	xcb_set_input_focus( c, XCB_INPUT_FOCUS_NONE, n->window, 0 );
 	activeWindow = n->parent;
@@ -314,8 +323,8 @@ int BecomeWM(  ) {
 } 
 
 void Cleanup() {
-	client_t *m = firstClient;
-	client_t *n = firstClient;
+	node_t *m = firstClient;
+	node_t *n = firstClient;
 
 	while ( n != NULL ) {
 		printf( "unparenting %x\n", n->window );
@@ -323,7 +332,7 @@ void Cleanup() {
 		xcb_destroy_window( c, n->parent );
 		xcb_flush( c );
 		m = n;
-		n = m->nextClient;
+		n = m->nextNode;
 		free( m );
 	}
 	xcb_disconnect( c );
@@ -345,6 +354,7 @@ void SetRootBackground() {
 
 	SGrafDrawFill( pixmap, colorGrey, 0, 0, w, h );
 
+	// draw rounded corners
 	SGrafDrawLine( pixmap, colorBlack, 0, 0, 0, 4 );
 	SGrafDrawLine( pixmap, colorBlack, 1, 0, 4, 0 );
 	SGrafDrawLine( pixmap, colorBlack, 1, 1, 1, 2 );
@@ -379,12 +389,12 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 							XCB_EVENT_MASK_POINTER_MOTION | 
 							XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | 
 							XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT };
-	client_t *m = firstClient;
-	client_t *n = firstClient;
+	node_t *m = firstClient;
+	node_t *n = firstClient;
 
 	if ( n == NULL ) {
-		firstClient = n = malloc( sizeof( client_t ) );
-		n->nextClient = NULL;
+		firstClient = n = malloc( sizeof( node_t ) );
+		n->nextNode = NULL;
 	} else {
 		while ( n != NULL ) {
 			if( win == n->window || win == n->parent ) {
@@ -392,10 +402,10 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 				return;
 			}
 			m = n;
-			n = m->nextClient;
+			n = m->nextNode;
 		}
-		m->nextClient = n = malloc( sizeof( client_t ) );
-		n->nextClient = NULL;
+		m->nextNode = n = malloc( sizeof( node_t ) );
+		n->nextNode = NULL;
 	}
 	if ( ( override_redirect ) || ( parent != screen->root ) ) {
 		n->managementState = STATE_NO_REDIRECT;
@@ -469,7 +479,7 @@ Event handlers
 */
 
 void DoButtonPress( xcb_button_press_event_t *e ) {
-	client_t *n = GetClientByParent( e->event );
+	node_t *n = GetClientByParent( e->event );
 
 	printf( "button press on window %x\n", e->event );
 	
@@ -572,18 +582,18 @@ void DoCreateNotify( xcb_create_notify_event_t *e ) {
 }
 
 void DoDestroy( xcb_destroy_notify_event_t *e ) {
-	client_t *n = firstClient;
-	client_t *m = firstClient;
+	node_t *n = firstClient;
+	node_t *m = firstClient;
 
-	for ( ; n != NULL; m = n, n = n->nextClient ) {
+	for ( ; n != NULL; m = n, n = n->nextNode ) {
 		if ( n->window == e->window ) {
-			m->nextClient = n->nextClient;
+			m->nextNode = n->nextNode;
 			if ( activeWindow == n->parent ) {
 				activeWindow = 0;
 			}
 			xcb_destroy_window( c, n->parent );
 			if( firstClient == n ) {
-				firstClient = n->nextClient;
+				firstClient = n->nextNode;
 			}
 			if( dragClient == n ) {
 				dragClient = NULL;
@@ -597,7 +607,7 @@ void DoDestroy( xcb_destroy_notify_event_t *e ) {
 }
 
 void DoMapRequest( xcb_map_request_event_t *e ) {
-	client_t *n = GetClientByWindow( e->window );
+	node_t *n = GetClientByWindow( e->window );
 
 	/* Todo:
 		Add ICCCM section 4.1.4 compatibility
@@ -618,7 +628,7 @@ void DoMapRequest( xcb_map_request_event_t *e ) {
 //It relies on the fact that X will unmap then remap windows on reparent,
 //if and only if they are already mapped
 void DoMapNotify( xcb_map_notify_event_t *e ) {
-	client_t *n = GetClientByWindow( e->window );
+	node_t *n = GetClientByWindow( e->window );
 
 	if ( n == NULL ) {
 		return;
@@ -633,7 +643,7 @@ void DoMapNotify( xcb_map_notify_event_t *e ) {
 }
 
 void DoUnmapNotify( xcb_unmap_notify_event_t *e ) {
-	client_t *n = GetClientByWindow( e->window );
+	node_t *n = GetClientByWindow( e->window );
 
 	if ( n == NULL ) {
 		return;
@@ -647,7 +657,7 @@ void DoUnmapNotify( xcb_unmap_notify_event_t *e ) {
 }
 
 void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
-	client_t *n = GetClientByWindow( e->window );
+	node_t *n = GetClientByWindow( e->window );
 
 	if ( n == NULL ) {
 		return;
@@ -664,10 +674,10 @@ void DoConfigureRequest( xcb_configure_request_event_t *e ) {
 }
 
 void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
-	client_t *n = GetClientByWindow( e->window );
+	node_t *n = GetClientByWindow( e->window );
 	
 	if ( n == NULL ) {
-		client_t *n = GetClientByParent( e->window );
+		node_t *n = GetClientByParent( e->window );
 		if ( n == NULL ) {
 			return;
 		}
@@ -686,7 +696,7 @@ void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 	xcb_get_property_cookie_t cookie;
     xcb_get_property_reply_t *reply;
-	client_t *n = GetClientByWindow( e->window );
+	node_t *n = GetClientByWindow( e->window );
 
 	if ( n == NULL ) {
 		return;
@@ -738,9 +748,6 @@ Main function
 */
 
 int main( int argc, char** argv ) {
-	char* display;
-	int i;
-
 	signal( SIGTERM, Quit );
 	signal( SIGINT, Quit );
 
