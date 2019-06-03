@@ -10,10 +10,10 @@
 #define PROGRAM_NAME "makron"
 
 #define VERSION_MAJOR 0
-#define VERSION_MINOR 1
+#define VERSION_MINOR 2
 #define VERSION_PATCH 0
-#define VERSION_STRING "0.1.0"
-#define VERSION_BUILDSTR "37"
+#define VERSION_STRING "0.2.0"
+#define VERSION_BUILDSTR "38"
 
 #define BORDER_SIZE_LEFT 1
 #define BORDER_SIZE_RIGHT 1
