@@ -70,9 +70,13 @@ typedef struct node_s {
 
 	//todo: gravity
 
-	struct node_s *nextNode;
+	struct node_s *nextNode; // todo: remove this
+
+	short numChildren;
+	struct node_s **children;
 } node_t;
 
+node_t *rootNode = NULL;
 node_t *firstClient = NULL;
 xcb_connection_t *c;
 xcb_screen_t *screen;
@@ -761,8 +765,8 @@ int main( int argc, char** argv ) {
 	c = sulfurGetXcbConn();
 	screen = sulfurGetXcbScreen();
 	if ( BecomeWM() < 0 ) {
-		printf( "Uh oh! It looks like there's another window manager running.\n" );
-		printf( "You'll need to close it before you can run makron.\n" );
+		printf( "it looks like another wm is running.\n" );
+		printf( "you will need to close it before you can run makron.\n" );
 		Cleanup();
 		return 1;
 	}
@@ -775,54 +779,25 @@ int main( int argc, char** argv ) {
 
 	while( ( e = xcb_wait_for_event( c ) ) != NULL ) {
 		switch( e->response_type & ~0x80 ) {
-			case XCB_BUTTON_PRESS:
-				DoButtonPress( (xcb_button_press_event_t *)e );
-				break;
-			case XCB_BUTTON_RELEASE:
-				DoButtonRelease( (xcb_button_release_event_t *)e );
-				break;
-			case XCB_MOTION_NOTIFY:
-				DoMotionNotify( (xcb_motion_notify_event_t *)e );
-				break;
-			case XCB_EXPOSE:
-				DoExpose( (xcb_expose_event_t *)e );
-				break;
-			case XCB_CREATE_NOTIFY: 
-				DoCreateNotify( (xcb_create_notify_event_t *)e );
-				break;
-			case XCB_DESTROY_NOTIFY:
-				DoDestroy( (xcb_destroy_notify_event_t *)e );
-				break;
-			case XCB_MAP_NOTIFY:
-				DoMapNotify( (xcb_map_notify_event_t *)e );
-				break;
-			case XCB_MAP_REQUEST:
-				DoMapRequest( (xcb_map_request_event_t *)e );
-				break;
-			case XCB_UNMAP_NOTIFY:
-				DoUnmapNotify( (xcb_unmap_notify_event_t *)e );
-				break;
-			case XCB_REPARENT_NOTIFY:
-				DoReparentNotify( (xcb_reparent_notify_event_t *)e );
-				break;
-			case XCB_CONFIGURE_NOTIFY:
-				DoConfigureNotify( (xcb_configure_notify_event_t *)e );
-				break;
-			case XCB_CONFIGURE_REQUEST:
-				DoConfigureRequest( (xcb_configure_request_event_t *)e );
-				break;
-			case XCB_PROPERTY_NOTIFY:
-				DoPropertyNotify( (xcb_property_notify_event_t *)e );
-				break;
-			case XCB_CLIENT_MESSAGE:
-				DoClientMessage( (xcb_client_message_event_t *)e );
-				break;
-			default:
-				printf( "Warning, unhandled event #%d\n", e->response_type & ~0x80 );
-				break;
+			case XCB_BUTTON_PRESS: 		DoButtonPress( (xcb_button_press_event_t *)e ); break;
+			case XCB_BUTTON_RELEASE: 	DoButtonRelease( (xcb_button_release_event_t *)e ); break;
+			case XCB_MOTION_NOTIFY: 	DoMotionNotify( (xcb_motion_notify_event_t *)e ); break;
+			case XCB_EXPOSE: 			DoExpose( (xcb_expose_event_t *)e ); break;
+			case XCB_CREATE_NOTIFY:  	DoCreateNotify( (xcb_create_notify_event_t *)e ); break;
+			case XCB_DESTROY_NOTIFY: 	DoDestroy( (xcb_destroy_notify_event_t *)e ); break;
+			case XCB_MAP_NOTIFY: 		DoMapNotify( (xcb_map_notify_event_t *)e ); break;
+			case XCB_MAP_REQUEST: 		DoMapRequest( (xcb_map_request_event_t *)e ); break;
+			case XCB_UNMAP_NOTIFY: 		DoUnmapNotify( (xcb_unmap_notify_event_t *)e ); break;
+			case XCB_REPARENT_NOTIFY: 	DoReparentNotify( (xcb_reparent_notify_event_t *)e ); break;
+			case XCB_CONFIGURE_NOTIFY: 	DoConfigureNotify( (xcb_configure_notify_event_t *)e ); break;
+			case XCB_CONFIGURE_REQUEST: DoConfigureRequest( (xcb_configure_request_event_t *)e ); break;
+			case XCB_PROPERTY_NOTIFY: 	DoPropertyNotify( (xcb_property_notify_event_t *)e ); break;
+			case XCB_CLIENT_MESSAGE: 	DoClientMessage( (xcb_client_message_event_t *)e ); break;
+			default: 					dprintf( 1, "warning, unhandled event #%d\n", e->response_type & ~0x80 ); break;
 		}
 		free( e );
 	}
-	printf( "Looks like we're done here. See you next time!\n" );
+	printf( "connection closed. goodbye!\n" );
 	Cleanup();
-	return 0;}
+	return 0;
+}
