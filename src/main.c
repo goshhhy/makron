@@ -777,25 +777,28 @@ int main( int argc, char** argv ) {
 	SetRootBackground();
 	ReparentExistingWindows();
 
-	while( ( e = xcb_wait_for_event( c ) ) != NULL ) {
-		switch( e->response_type & ~0x80 ) {
-			case XCB_BUTTON_PRESS: 		DoButtonPress( (xcb_button_press_event_t *)e ); break;
-			case XCB_BUTTON_RELEASE: 	DoButtonRelease( (xcb_button_release_event_t *)e ); break;
-			case XCB_MOTION_NOTIFY: 	DoMotionNotify( (xcb_motion_notify_event_t *)e ); break;
-			case XCB_EXPOSE: 			DoExpose( (xcb_expose_event_t *)e ); break;
-			case XCB_CREATE_NOTIFY:  	DoCreateNotify( (xcb_create_notify_event_t *)e ); break;
-			case XCB_DESTROY_NOTIFY: 	DoDestroy( (xcb_destroy_notify_event_t *)e ); break;
-			case XCB_MAP_NOTIFY: 		DoMapNotify( (xcb_map_notify_event_t *)e ); break;
-			case XCB_MAP_REQUEST: 		DoMapRequest( (xcb_map_request_event_t *)e ); break;
-			case XCB_UNMAP_NOTIFY: 		DoUnmapNotify( (xcb_unmap_notify_event_t *)e ); break;
-			case XCB_REPARENT_NOTIFY: 	DoReparentNotify( (xcb_reparent_notify_event_t *)e ); break;
-			case XCB_CONFIGURE_NOTIFY: 	DoConfigureNotify( (xcb_configure_notify_event_t *)e ); break;
-			case XCB_CONFIGURE_REQUEST: DoConfigureRequest( (xcb_configure_request_event_t *)e ); break;
-			case XCB_PROPERTY_NOTIFY: 	DoPropertyNotify( (xcb_property_notify_event_t *)e ); break;
-			case XCB_CLIENT_MESSAGE: 	DoClientMessage( (xcb_client_message_event_t *)e ); break;
-			default: 					dprintf( 1, "warning, unhandled event #%d\n", e->response_type & ~0x80 ); break;
+	while( !xcb_connection_has_error( c ) ) {
+		while( ( e = xcb_poll_for_event( c ) ) != NULL ) {
+			switch( e->response_type & ~0x80 ) {
+				case XCB_BUTTON_PRESS: 		DoButtonPress( (xcb_button_press_event_t *)e ); break;
+				case XCB_BUTTON_RELEASE: 	DoButtonRelease( (xcb_button_release_event_t *)e ); break;
+				case XCB_MOTION_NOTIFY: 	DoMotionNotify( (xcb_motion_notify_event_t *)e ); break;
+				case XCB_EXPOSE: 			DoExpose( (xcb_expose_event_t *)e ); break;
+				case XCB_CREATE_NOTIFY:  	DoCreateNotify( (xcb_create_notify_event_t *)e ); break;
+				case XCB_DESTROY_NOTIFY: 	DoDestroy( (xcb_destroy_notify_event_t *)e ); break;
+				case XCB_MAP_NOTIFY: 		DoMapNotify( (xcb_map_notify_event_t *)e ); break;
+				case XCB_MAP_REQUEST: 		DoMapRequest( (xcb_map_request_event_t *)e ); break;
+				case XCB_UNMAP_NOTIFY: 		DoUnmapNotify( (xcb_unmap_notify_event_t *)e ); break;
+				case XCB_REPARENT_NOTIFY: 	DoReparentNotify( (xcb_reparent_notify_event_t *)e ); break;
+				case XCB_CONFIGURE_NOTIFY: 	DoConfigureNotify( (xcb_configure_notify_event_t *)e ); break;
+				case XCB_CONFIGURE_REQUEST: DoConfigureRequest( (xcb_configure_request_event_t *)e ); break;
+				case XCB_PROPERTY_NOTIFY: 	DoPropertyNotify( (xcb_property_notify_event_t *)e ); break;
+				case XCB_CLIENT_MESSAGE: 	DoClientMessage( (xcb_client_message_event_t *)e ); break;
+				default: 					dprintf( 1, "warning, unhandled event #%d\n", e->response_type & ~0x80 ); break;
+			}
+			free( e );
 		}
-		free( e );
+		nanosleep( (const struct timespec[]){{0, 4166666L}}, NULL );
 	}
 	printf( "connection closed. goodbye!\n" );
 	Cleanup();
