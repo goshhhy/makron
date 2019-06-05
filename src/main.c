@@ -364,17 +364,6 @@ node_t* GetNodeByWindow( xcb_window_t w ) {
 	return NULL;
 }
 
-node_t *GetClientByWindow( xcb_window_t w ) {
-	node_t *n = firstClient;
-
-	for ( ; n != NULL; n = n->nextNode ) {
-		if ( n->window == w ) {
-			return n;
-		}
-	}
-	return NULL;
-}
-
 node_t *GetClientByParent( xcb_window_t w ) {
 	node_t *n = firstClient;
 
@@ -605,7 +594,7 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 	printf( "button press on window %x\n", e->event );
 	
 	if ( n == NULL ) {
-		n = GetClientByWindow( e->event );
+		n = GetNodeByWindow( e->event );
 		printf( "is client window\n" );
 		if ( n == NULL ) {
 			return;
@@ -737,7 +726,7 @@ void DoDestroy( xcb_destroy_notify_event_t *e ) {
 }
 
 void DoMapRequest( xcb_map_request_event_t *e ) {
-	node_t *n = GetClientByWindow( e->window );
+	node_t *n = GetNodeByWindow( e->window );
 
 	/* Todo:
 		Add ICCCM section 4.1.4 compatibility
@@ -758,7 +747,7 @@ void DoMapRequest( xcb_map_request_event_t *e ) {
 //It relies on the fact that X will unmap then remap windows on reparent,
 //if and only if they are already mapped
 void DoMapNotify( xcb_map_notify_event_t *e ) {
-	node_t *n = GetClientByWindow( e->window );
+	node_t *n = GetNodeByWindow( e->window );
 
 	if ( n == NULL ) {
 		return;
@@ -773,7 +762,7 @@ void DoMapNotify( xcb_map_notify_event_t *e ) {
 }
 
 void DoUnmapNotify( xcb_unmap_notify_event_t *e ) {
-	node_t *n = GetClientByWindow( e->window );
+	node_t *n = GetNodeByWindow( e->window );
 
 	if ( n == NULL ) {
 		return;
@@ -787,7 +776,7 @@ void DoUnmapNotify( xcb_unmap_notify_event_t *e ) {
 }
 
 void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
-	node_t *n = GetClientByWindow( e->window );
+	node_t *n = GetNodeByWindow( e->window );
 
 	if ( n == NULL ) {
 		return;
@@ -800,11 +789,11 @@ void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
 }
 
 void DoConfigureRequest( xcb_configure_request_event_t *e ) {
-	ConfigureClient( GetClientByWindow( e->window ), e->x, e->y, e->width, e->height );
+	ConfigureClient( GetNodeByWindow( e->window ), e->x, e->y, e->width, e->height );
 }
 
 void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
-	node_t *n = GetClientByWindow( e->window );
+	node_t *n = GetNodeByWindow( e->window );
 	
 	if ( n == NULL ) {
 		node_t *n = GetClientByParent( e->window );
@@ -826,7 +815,7 @@ void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 	xcb_get_property_cookie_t cookie;
     xcb_get_property_reply_t *reply;
-	node_t *n = GetClientByWindow( e->window );
+	node_t *n = GetNodeByWindow( e->window );
 
 	if ( n == NULL ) {
 		return;
