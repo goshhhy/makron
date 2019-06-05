@@ -123,6 +123,9 @@ Support functions
 =================
 */
 
+void Cleanup( void );
+void Quit( int r );
+
 void dbgprintf( int level, char* fmt, ... ) {
 	va_list args;
 	va_start( args, fmt );
@@ -130,27 +133,6 @@ void dbgprintf( int level, char* fmt, ... ) {
 		vprintf( fmt, args );
 	}
 	va_end( args );
-}
-
-void Cleanup() {
-	node_t *m = firstClient;
-	node_t *n = firstClient;
-
-	while ( n != NULL ) {
-		printf( "unparenting %x\n", n->window );
-		xcb_reparent_window( c, n->window, screen->root, n->x, n->y );
-		xcb_destroy_window( c, n->parent );
-		xcb_flush( c );
-		m = n;
-		n = m->nextNode;
-		free( m );
-	}
-	xcb_disconnect( c );
-}
-
-void Quit( int r ) {
-	Cleanup();
-	exit( r );
 }
 
 void AddNodeToList( node_t* n, node_t** list, int* top ) {
@@ -235,6 +217,7 @@ void DestroyNode( node_t* n ) {
 		}
 	}
 
+	RemoveNodeFromList( n, windowList, &windowListMax );
 	xcb_destroy_window( c, n->window );
 
 	// if our parent is a frame or group, and it is empty, it should also be destroyed
@@ -246,6 +229,22 @@ void DestroyNode( node_t* n ) {
 	free( n->children );
 	free( n );
 	xcb_flush( c );
+}
+
+void Cleanup( void ) {
+	if ( !windowList )
+		return;
+
+	while ( windowList[0] != NULL ) {
+		DestroyNode( windowList[0] );
+	}
+
+	xcb_disconnect( c );
+}
+
+void Quit( int r ) {
+	Cleanup();
+	exit( r );
 }
 
 void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigned short height ) {
