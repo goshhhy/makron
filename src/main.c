@@ -370,17 +370,6 @@ node_t* GetNodeByWindow( xcb_window_t w ) {
 	return NULL;
 }
 
-node_t *GetClientByParent( xcb_window_t w ) {
-	node_t *n = firstClient;
-
-	for ( ; n != NULL; n = n->nextNode ) {
-		if ( n->parent == w ) {
-			return n;
-		}
-	}
-	return NULL;
-}
-
 void RaiseClient( node_t *n ) {
 	unsigned short mask = XCB_CONFIG_WINDOW_STACK_MODE;
 	unsigned int v[1] = { XCB_STACK_MODE_ABOVE };
@@ -538,9 +527,8 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 						XCB_EVENT_MASK_BUTTON_RELEASE | 
 						XCB_EVENT_MASK_POINTER_MOTION;
 	xcb_change_window_attributes( c, n->window, XCB_CW_EVENT_MASK, v );
-
 	AddNodeToList( n, windowList, &windowListMax );
-
+	RaiseClient( n );
 	xcb_flush( c );
 }
 
