@@ -373,19 +373,16 @@ node_t* GetNodeByWindow( xcb_window_t w ) {
 void RaiseClient( node_t *n ) {
 	unsigned short mask = XCB_CONFIG_WINDOW_STACK_MODE;
 	unsigned int v[1] = { XCB_STACK_MODE_ABOVE };
-	node_t *m = GetClientByParent( activeWindow );
+	int i;
+
+	for ( i = 1; ( i < windowListMax ) && ( windowList[i] != NULL ) && ( windowList[i] != n ); i++ )
+		windowList[i] = windowList[i - 1];
+	windowList[0] = n;
 
 	xcb_set_input_focus( c, XCB_INPUT_FOCUS_NONE, n->window, 0 );
-	activeWindow = n->parent;
 
 	DrawFrame( n );
-	DrawFrame( m ); //Yes, m could be null. DrawFrame() handles this case.
-	if ( n->managementState == STATE_NO_REDIRECT ) { //this might not be necessary
-		xcb_configure_window( c, n->window, mask, v );
-	} else {
-		xcb_configure_window( c, n->parent, mask, v );
-	}
-
+	xcb_configure_window( c, n->window, mask, v );
 	xcb_flush( c );
 }
 
