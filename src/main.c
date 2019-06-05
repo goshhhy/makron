@@ -31,9 +31,10 @@ typedef enum {
 } clientWindowState_t;
 
 typedef enum {
-	STATE_NO_REDIRECT, //override redirect
 	STATE_INIT,
+	STATE_NO_REDIRECT, //override redirect
 	STATE_REPARENTED,
+	STATE_CHILD,
 	STATE_TRANSIENT
 } clientManagementState_t;
 
@@ -79,7 +80,6 @@ typedef struct node_s {
 } node_t;
 
 node_t *rootNode = NULL;
-node_t *firstClient = NULL;
 xcb_connection_t *c;
 xcb_screen_t *screen;
 xcb_generic_event_t *e;
@@ -181,6 +181,14 @@ void RemoveNodeFromList( node_t* n, node_t** list, int* top ) {
 
 }
 
+node_t* GetParentFrame( node_t* n ) {
+	node_t* p;
+	for ( p = n; ( p != NULL ) && ( p->type != NODE_FRAME ); p = p->ppparent ) {
+		;;
+	}
+	return p;
+}
+
 node_t* CreateNode( nodeType_t type, xcb_window_t wnd, node_t* parent, short width, short height, short x, short y ) {
 	node_t* n = calloc( 1, sizeof( node_t ) );
 	if ( !n )
@@ -265,10 +273,10 @@ void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigne
 							XCB_CONFIG_WINDOW_HEIGHT |
 							XCB_CONFIG_WINDOW_BORDER_WIDTH;
 	int i;
+	node_t *p = GetParentFrame( n );
 
-	if ( n == NULL ) {
+	if ( n == NULL )
 		return;
-	}
 
 	nx = x;
 	ny = y;
@@ -299,63 +307,68 @@ void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigne
 		height, 
 		0
 	};
-	
-	xcb_configure_window( c, n->parent, pmask, pv );
+	if ( p != NULL )
+		xcb_configure_window( c, p->window, pmask, pv );
 	xcb_configure_window( c, n->window, cmask, cv );
 	xcb_flush( c );
 }
 
-void DrawFrame( node_t *n ) {
+void DrawFrame( node_t *node ) {
 	int i;
 	int textLen = 0, textWidth = 0, textPos = 0;
 	xcb_query_text_extents_reply_t *r;
 	xcb_char2b_t *s;
+	node_t* frame;
 
-	if( n == NULL || n->managementState == STATE_NO_REDIRECT ) {
+	if( node == NULL || node->managementState == STATE_NO_REDIRECT ) {
 		return;
 	}
 
-	textLen = strnlen( n->name, 256 );
+	frame = GetParentFrame( node );
+	if ( !frame )
+		return;
+
+	textLen = strnlen( node->name, 256 );
 	s = malloc( textLen * sizeof( xcb_char2b_t ) );
 	for( int i = 0; i < textLen; i++ ) {
 		s[i].byte1 = 0;
-		s[i].byte2 = n->name[i];
+		s[i].byte2 = node->name[i];
 	}
 	r = xcb_query_text_extents_reply( c, xcb_query_text_extents( c, windowFont, textLen, s ), NULL );
 	textWidth = r->overall_width;
 	free( r ); 
 	free( s );
-	textPos = ( ( n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
+	textPos = ( ( node->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
 
-	if ( n->parent == activeWindow ) {
-		SGrafDrawFill( n->parent, colorLightGrey, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
-		SGrafDrawRect( n->parent, colorBlack, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+	if ( frame == windowList[0] ) {
+		SGrafDrawFill( frame->window, colorLightGrey, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		SGrafDrawRect( frame->window, colorBlack, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
 
-		SGrafDrawLine( n->parent, colorBlack, 1, BORDER_SIZE_TOP - 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
+		SGrafDrawLine( frame->window, colorBlack, 1, BORDER_SIZE_TOP - 1, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
 
 		for ( i = 4; i < 16; i += 2 ) {
-			SGrafDrawLine( n->parent, colorGrey, 2, i, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 3, i );
+			SGrafDrawLine( frame->window, colorGrey, 2, i, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 3, i );
 		}
 
-		SGrafDrawLine( n->parent, colorLightAccent, 1, 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1 );
-		SGrafDrawLine( n->parent, colorLightAccent, 1, 1, 1, BORDER_SIZE_TOP - 2 );
-		SGrafDrawLine( n->parent, colorAccent, 1, BORDER_SIZE_TOP - 2, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
-		SGrafDrawLine( n->parent, colorAccent, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
+		SGrafDrawLine( frame->window, colorLightAccent, 1, 1, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1 );
+		SGrafDrawLine( frame->window, colorLightAccent, 1, 1, 1, BORDER_SIZE_TOP - 2 );
+		SGrafDrawLine( frame->window, colorAccent, 1, BORDER_SIZE_TOP - 2, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
+		SGrafDrawLine( frame->window, colorAccent, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
 
-		SGrafDrawRect( n->parent, colorLightGrey, 8, 3, 12, 12 );
-		SGrafDrawFill( n->parent, colorDarkAccent, 9, 4, 11, 11 );
+		SGrafDrawRect( frame->window, colorLightGrey, 8, 3, 12, 12 );
+		SGrafDrawFill( frame->window, colorDarkAccent, 9, 4, 11, 11 );
 		if ( ! ( wmState == WMSTATE_CLOSE && mouseIsOverCloseButton ) ) {
-			SGrafDrawRect( n->parent, colorLightAccent, 10, 5, 9, 9 );
-			SGrafDrawFill( n->parent, colorGrey, 11, 6, 7, 7 );
+			SGrafDrawRect( frame->window, colorLightAccent, 10, 5, 9, 9 );
+			SGrafDrawFill( frame->window, colorGrey, 11, 6, 7, 7 );
 		}
-		SGrafDrawFill( n->parent, colorLightGrey, textPos - 8, 3, textWidth + 16, 12 );
-		xcb_image_text_8( c, textLen, n->parent, activeFontContext, textPos, 14, n->name );
+		SGrafDrawFill( frame->window, colorLightGrey, textPos - 8, 3, textWidth + 16, 12 );
+		xcb_image_text_8( c, textLen, frame->window, activeFontContext, textPos, 14, frame->name );
 	} else {
-		SGrafDrawFill( n->parent, colorWhite, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
-		SGrafDrawRect( n->parent, colorDarkGrey, 0, 0, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, n->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		SGrafDrawFill( frame->window, colorWhite, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		SGrafDrawRect( frame->window, colorDarkGrey, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
 
-		SGrafDrawLine( n->parent, colorDarkGrey, 1, BORDER_SIZE_TOP - 1, n->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
-		xcb_image_text_8( c, textLen, n->parent, inactiveFontContext, textPos, 14, n->name );
+		SGrafDrawLine( frame->window, colorDarkGrey, 1, BORDER_SIZE_TOP - 1, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
+		xcb_image_text_8( c, textLen, frame->window, inactiveFontContext, textPos, 14, frame->name );
 	}
 	
 	xcb_flush( c );
@@ -515,6 +528,9 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 		xcb_reparent_window( c, n->window, n->parent, 1, 19 );
 		AddNodeToList( p, windowList, &windowListMax );
 		p->managementState = n->managementState = STATE_REPARENTED;
+	} else if ( p != rootNode ) {
+		n->managementState = STATE_CHILD;
+		printf( "New child window\n" );
 	} else {
 		n->managementState = STATE_NO_REDIRECT;
 		printf( "New unreparented window\n" );
@@ -524,6 +540,7 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 						XCB_EVENT_MASK_BUTTON_RELEASE | 
 						XCB_EVENT_MASK_POINTER_MOTION;
 	xcb_change_window_attributes( c, n->window, XCB_CW_EVENT_MASK, v );
+	AddNodeToList( p, p->children, &p->childrenMax );
 	AddNodeToList( n, windowList, &windowListMax );
 	RaiseClient( n );
 	xcb_flush( c );
@@ -561,7 +578,7 @@ Event handlers
 */
 
 void DoButtonPress( xcb_button_press_event_t *e ) {
-	node_t *n = GetClientByParent( e->event );
+	node_t *n = GetNodeByWindow( e->event );
 
 	printf( "button press on window %x\n", e->event );
 	
@@ -606,19 +623,19 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 
 				xcb_client_message_event_t *msg = calloc(32, 1);
 				msg->response_type = XCB_CLIENT_MESSAGE;
-				msg->window = GetClientByParent( activeWindow )->window;
+				msg->window = windowList[0]->window;
 				msg->format = 32;
 				msg->sequence = 0;
 				msg->type = WM_PROTOCOLS;
 				msg->data.data32[0] = WM_DELETE_WINDOW;
 				msg->data.data32[1] = XCB_CURRENT_TIME;
-				xcb_send_event( c, 0, GetClientByParent( activeWindow )->window, XCB_EVENT_MASK_NO_EVENT, (char*)msg );
+				xcb_send_event( c, 0, windowList[0]->window, XCB_EVENT_MASK_NO_EVENT, (char*)msg );
 				
 				xcb_flush( c );
 				free( msg );
 			}
 			wmState = WMSTATE_IDLE;
-			DrawFrame( GetClientByParent( activeWindow ) );
+			DrawFrame( windowList[0] );
 			break;
 		default:
 			wmState = WMSTATE_IDLE;
@@ -641,7 +658,7 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 	}
 
 	if ( wmState == WMSTATE_CLOSE ) {
-		DrawFrame( GetClientByParent( activeWindow ) );
+		DrawFrame( windowList[0] );
 	}
 
 	if ( wmState == WMSTATE_DRAG ) {
@@ -652,7 +669,7 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 }
 
 void DoExpose( xcb_expose_event_t *e ) {
-	DrawFrame( GetClientByParent( e->window ) );
+	DrawFrame( GetNodeByWindow( e->window ) );
 	SetRootBackground();
 }
 
@@ -740,22 +757,25 @@ void DoConfigureRequest( xcb_configure_request_event_t *e ) {
 
 void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 	node_t *n = GetNodeByWindow( e->window );
-	
-	if ( n == NULL ) {
-		node_t *n = GetClientByParent( e->window );
-		if ( n == NULL ) {
-			return;
-		}
-		n->x = e->x;
-		n->y = e->y;
-		n->width = e->width - ( BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT );
-		n->height = e->height - ( BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM );
-		return;
-	}
+	node_t *p;
+
 	n->x = e->x;
 	n->y = e->y;
 	n->width = e->width;
 	n->height = e->height;
+
+	if ( n->type != NODE_CLIENT )
+		return;
+
+	p = GetParentFrame( n );
+
+	if ( p != NULL ) {
+		p->x = e->x;
+		p->y = e->y;
+		p->width = e->width - ( BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT );
+		p->height = e->height - ( BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM );
+		return;
+	}
 }
 
 void DoPropertyNotify( xcb_property_notify_event_t *e ) {
@@ -763,9 +783,8 @@ void DoPropertyNotify( xcb_property_notify_event_t *e ) {
     xcb_get_property_reply_t *reply;
 	node_t *n = GetNodeByWindow( e->window );
 
-	if ( n == NULL ) {
+	if ( n == NULL )
 		return;
-	}
 
 	if ( e->atom == XCB_ATOM_WM_NAME ) {
 		cookie = xcb_get_property( c, 0, e->window, XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 0, 256 );
