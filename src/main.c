@@ -664,7 +664,7 @@ void DoDestroy( xcb_destroy_notify_event_t *e ) {
 		if ( node->ppparent != NULL )
 			RemoveNodeFromList( node, node->ppparent->children, &node->ppparent->childrenMax );
 	} else {
-		fprintf("warning: window removed that was not in window list\n");
+		fprintf(stderr, "warning: window removed that was not in window list\n");
 	}
 
 	for ( ; n != NULL; m = n, n = n->nextNode ) {
