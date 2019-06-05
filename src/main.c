@@ -153,46 +153,6 @@ void Quit( int r ) {
 	exit( r );
 }
 
-node_t* CreateNode( nodeType_t type, xcb_window_t wnd, node_t* parent, short width, short height, short x, short y ) {
-	node_t* n = calloc( 1, sizeof( node_t ) );
-	if ( !n )
-		return NULL;
-	n->childrenMax = 4;
-	n->children = calloc( childrenMax, sizeof( node_t*) );
-	if ( !n->children ) {
-		free(n);
-		return NULL;
-	}
-
-	n->type = type;
-	n->window = wnd;
-	n->parent = parent;
-	n->width = width;
-	n->height = height;
-	n->x = x;
-	n->y = y;
-	return n;
-}
-
-void DestroyNode( node_t* n ) {
-	int i;
-
-	if ( !n )
-		return;
-
-	if ( n->type == NODE_ROOT )
-		return;
-
-	if ( n->ppparent && n->ppparent->children && n->children ) {
-		for ( i = 0; i < n->childrenMax; i++ ) {
-			if ( n->children[i] == NULL )
-				break;
-			xcb_reparent_window( c, n->window, n->parent->window, n->x, n->y );
-			AddNodeToList( n->children[i], n->ppparent->children, n->ppparent->childrenMax );
-		}
-	}
-}
-
 void AddNodeToList( node_t* n, node_t** list, int* top ) {
 	int i;
 
@@ -237,6 +197,55 @@ void RemoveNodeFromList( node_t* n, node_t** list, int* top ) {
 		dprintf( 2, "client list size is %i\n", *top );
 	}
 
+}
+
+node_t* CreateNode( nodeType_t type, xcb_window_t wnd, node_t* parent, short width, short height, short x, short y ) {
+	node_t* n = calloc( 1, sizeof( node_t ) );
+	if ( !n )
+		return NULL;
+	n->childrenMax = 4;
+	n->children = calloc( n->childrenMax, sizeof( node_t*) );
+	if ( !n->children ) {
+		free(n);
+		return NULL;
+	}
+
+	n->type = type;
+	n->window = wnd;
+	n->ppparent = parent;
+	n->width = width;
+	n->height = height;
+	n->x = x;
+	n->y = y;
+	return n;
+}
+
+void DestroyNode( node_t* n ) {
+	int i;
+
+	if ( !n || n->type == NODE_ROOT )
+		return;
+
+	// reparent any child windows
+	if ( n->children && n->ppparent && n->ppparent->children ) {
+		for ( i = 0; ( i < n->childrenMax ) && ( n->children[i] != NULL ); i++ ) {
+			xcb_reparent_window( c, n->window, n->ppparent->window, n->x, n->y );
+			AddNodeToList( n->children[i], n->ppparent->children, &n->ppparent->childrenMax );
+			RemoveNodeFromList( n->children[i], n->children, &n->childrenMax );
+		}
+	}
+
+	xcb_destroy_window( c, n->window );
+
+	// if our parent is a frame or group, and it is empty, it should also be destroyed
+	if ( ( n->ppparent->type == NODE_FRAME ) || ( n->ppparent->type == NODE_GROUP ) ) {
+		if ( ( n->ppparent->children ) && ( n->ppparent->children[i] == NULL ) ) {
+			DestroyNode( n->ppparent );
+		}
+	}
+	free( n->children );
+	free( n );
+	xcb_flush( c );
 }
 
 void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigned short height ) {
