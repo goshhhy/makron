@@ -1,10 +1,17 @@
 #!/bin/sh
 
 Xephyr :10 -screen 1152x864 &
+xpid=$!
 
 sleep 0.1
 
 export DISPLAY=:10
-makron &
+./build/makron &
 xclock &
-xterm
+xeyes &
+xload &
+xterm &
+wait $!
+
+kill $xpid
+

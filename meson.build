@@ -1,4 +1,4 @@
-project('makron', 'c')
+project('makron', 'c', default_options : ['buildtype=debugoptimized'])
 
 xcb = dependency('xcb')
 sulfur = dependency('sulfur')
