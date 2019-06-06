@@ -307,8 +307,8 @@ void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigne
 	unsigned int pv[5] = {
 		nx, 
 		ny, 
-		width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 2, 
-		height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 2, 
+		width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1, 
+		height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1, 
 		0
 	};
 	unsigned int cv[3] = {
@@ -350,19 +350,19 @@ void DrawFrame( node_t *node ) {
 	textPos = ( ( node->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
 
 	if ( frame->children.nodes[0] == windowList.nodes[0] ) {
-		SGrafDrawFill( frame->window, colorLightGrey, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
-		SGrafDrawRect( frame->window, colorBlack, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		SGrafDrawFill( frame->window, colorLightGrey, 0, 0, frame->width - 1, frame->height - 1 );
+		SGrafDrawRect( frame->window, colorBlack, 0, 0, frame->width - 1, frame->height - 1 );
 
-		SGrafDrawLine( frame->window, colorBlack, 1, BORDER_SIZE_TOP - 1, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
+		SGrafDrawLine( frame->window, colorBlack, 1, BORDER_SIZE_TOP - 1, frame->width - 2, BORDER_SIZE_TOP - 1 );
 
 		for ( i = 4; i < 16; i += 2 ) {
-			SGrafDrawLine( frame->window, colorGrey, 2, i, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 3, i );
+			SGrafDrawLine( frame->window, colorGrey, 2, i, frame->width - 3, i );
 		}
 
-		SGrafDrawLine( frame->window, colorLightAccent, 1, 1, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1 );
+		SGrafDrawLine( frame->window, colorLightAccent, 1, 1, frame->width - 2, 1 );
 		SGrafDrawLine( frame->window, colorLightAccent, 1, 1, 1, BORDER_SIZE_TOP - 2 );
-		SGrafDrawLine( frame->window, colorAccent, 1, BORDER_SIZE_TOP - 2, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
-		SGrafDrawLine( frame->window, colorAccent, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, 1, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 2 );
+		SGrafDrawLine( frame->window, colorAccent, 1, BORDER_SIZE_TOP - 2, frame->width - 2, BORDER_SIZE_TOP - 2 );
+		SGrafDrawLine( frame->window, colorAccent, frame->width - 2, 1, frame->width - 2, BORDER_SIZE_TOP - 2 );
 
 		SGrafDrawRect( frame->window, colorLightGrey, 8, 3, 12, 12 );
 		SGrafDrawFill( frame->window, colorDarkAccent, 9, 4, 11, 11 );
@@ -373,10 +373,10 @@ void DrawFrame( node_t *node ) {
 		SGrafDrawFill( frame->window, colorLightGrey, textPos - 8, 3, textWidth + 16, 12 );
 		xcb_image_text_8( c, textLen, frame->window, activeFontContext, textPos, 14, frame->name );
 	} else {
-		SGrafDrawFill( frame->window, colorWhite, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
-		SGrafDrawRect( frame->window, colorDarkGrey, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
+		SGrafDrawFill( frame->window, colorWhite, 0, 0, frame->width - 1, frame->height - 1 );
+		SGrafDrawRect( frame->window, colorDarkGrey, 0, 0, frame->width - 1, frame->height - 1 );
 
-		SGrafDrawLine( frame->window, colorDarkGrey, 1, BORDER_SIZE_TOP - 1, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 2, BORDER_SIZE_TOP - 1 );
+		SGrafDrawLine( frame->window, colorDarkGrey, 1, BORDER_SIZE_TOP - 1, frame->width - 1, BORDER_SIZE_TOP - 1 );
 		xcb_image_text_8( c, textLen, frame->window, inactiveFontContext, textPos, 14, frame->name );
 	}
 	
