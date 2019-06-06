@@ -117,7 +117,6 @@ short mouseIsOverCloseButton;
 
 // list of all windows, in most recently raised order
 nodeList_t windowList;
-
 /*
 =================
 Support functions
@@ -248,7 +247,6 @@ void DestroyNode( node_t* n ) {
 	}
 	free( n->children.nodes );
 	free( n );
-	xcb_flush( c );
 }
 
 void Cleanup( void ) {
@@ -256,7 +254,7 @@ void Cleanup( void ) {
 		return;
 
 	while ( windowList.nodes[1] != NULL ) {
-		DestroyNode( windowList.nodes[0] );
+		DestroyNode( windowList.nodes[1] );
 	}
 	free( windowList.nodes[0]->children.nodes );
 	free( windowList.nodes[0] );
@@ -319,7 +317,6 @@ void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigne
 	if ( p != NULL )
 		xcb_configure_window( c, p->window, pmask, pv );
 	xcb_configure_window( c, n->window, cmask, cv );
-	xcb_flush( c );
 }
 
 void DrawFrame( node_t *node ) {
@@ -379,8 +376,7 @@ void DrawFrame( node_t *node ) {
 		SGrafDrawLine( frame->window, colorDarkGrey, 1, BORDER_SIZE_TOP - 1, frame->width - 1, BORDER_SIZE_TOP - 1 );
 		xcb_image_text_8( c, textLen, frame->window, inactiveFontContext, textPos, 14, frame->name );
 	}
-	
-	xcb_flush( c );
+
 	return;
 }
 
@@ -419,7 +415,6 @@ void RaiseClient( node_t *n ) {
 	DrawFrame( p );
 	DrawFrame( old );
 	xcb_configure_window( c, n->window, mask, v );
-	xcb_flush( c );
 	printf( "done\n" );
 }
 
@@ -507,8 +502,6 @@ void SetRootBackground() {
 	
 	xcb_change_window_attributes( c, screen->root, XCB_CW_BACK_PIXMAP, v );
 	xcb_clear_area( c, 1, screen->root, 0, 0, w, h );
-
-	xcb_flush( c );
 }
 
 void SetupRoot() {
@@ -570,7 +563,6 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 	AddNodeToList( n, &p->children );
 	AddNodeToList( n, &windowList );
 	RaiseClient( n );
-	xcb_flush( c );
 }
 
 void ReparentExistingWindows() {
@@ -654,7 +646,6 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 				msg->data.data32[1] = XCB_CURRENT_TIME;
 				xcb_send_event( c, 0, windowList.nodes[0]->window, XCB_EVENT_MASK_NO_EVENT, (char*)msg );
 				
-				xcb_flush( c );
 				free( msg );
 			}
 			wmState = WMSTATE_IDLE;
@@ -725,7 +716,6 @@ void DoMapRequest( xcb_map_request_event_t *e ) {
 	if ( p )
 		xcb_map_window( c, p->window );
 	xcb_map_window( c, n->window );
-	xcb_flush( c );
 	RaiseClient( n );
 	printf( "window %x mapped\n", e->window );
 }
@@ -745,7 +735,6 @@ void DoMapNotify( xcb_map_notify_event_t *e ) {
 		n->parentMapped = 1;
 		if ( p )
 			xcb_map_window( c, p->window );
-		xcb_flush( c );
 		RaiseClient( n );
 	}
 }
@@ -762,7 +751,6 @@ void DoUnmapNotify( xcb_unmap_notify_event_t *e ) {
 		n->parentMapped = 0;
 		if ( p )
 			xcb_unmap_window( c, p->window );
-		xcb_flush( c );
 	}
 }
 
@@ -911,6 +899,7 @@ int main( int argc, char** argv ) {
 				case XCB_CLIENT_MESSAGE: 	DoClientMessage( (xcb_client_message_event_t *)e ); break;
 				default: 					dprintf( 1, "warning, unhandled event #%d\n", e->response_type & ~0x80 ); break;
 			}
+			xcb_flush( c );
 			free( e );
 		}
 		nanosleep( (const struct timespec[]){{0, 4166666L}}, NULL );
