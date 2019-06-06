@@ -51,11 +51,17 @@ typedef enum {
 	NODE_GROUP,
 } nodeType_t;
 
+struct node_s;
+
+typedef struct nodeList_s {
+	struct node_s** nodes;
+	int max;
+} nodeList_t;
+
 typedef struct node_s {
 	nodeType_t type;
 
 	xcb_window_t window;
-	xcb_window_t parent;
 	
 	struct node_s* ppparent;
 
@@ -73,10 +79,7 @@ typedef struct node_s {
 
 	//todo: gravity
 
-	struct node_s *nextNode; // todo: remove this
-
-	int childrenMax;
-	struct node_s **children;
+	struct nodeList_s children;
 } node_t;
 
 node_t *rootNode = NULL;
@@ -111,11 +114,8 @@ short mouseLastKnownX;
 short mouseLastKnownY;
 short mouseIsOverCloseButton;
 
-xcb_window_t activeWindow;
-
 // list of all windows, in most recently raised order
-int windowListMax = 4;
-node_t** windowList;
+nodeList_t windowList;
 
 /*
 =================
@@ -135,50 +135,51 @@ void dbgprintf( int level, char* fmt, ... ) {
 	va_end( args );
 }
 
-void AddNodeToList( node_t* n, node_t** list, int* top ) {
+void AddNodeToList( node_t* n, nodeList_t* list ) {
 	int i;
 
-	for ( i = 0 ; i < *top; i++ ) {
-		if ( list[i] == NULL ) {
-			list[i] = n;
+	for ( i = 0 ; i < list->max; i++ ) {
+		if ( list->nodes[i] == NULL ) {
+			list->nodes[i] = n;
 			return;
 		}
 	}
 	dprintf( 2, "growing client list\n" );
-	windowList = realloc( windowList, sizeof ( node_t ) * ( windowListMax += 4 ) );
-	if ( windowList == NULL ) {
-		fprintf( stderr, "failure growing client list\n" );
+	list->nodes = realloc( list->nodes, sizeof ( node_t ) * ( list->max += 4 ) );
+	if ( list->nodes == NULL ) {
+		fprintf( stderr, "failure growing window list\n" );
 		Quit( 2 );
 	}
-	dprintf( 2, "client list size is %i\n", *top );
-	AddNodeToList( n, list, top );
+	for ( i = list->max - 4; i < list->max; i++ ) {
+		list->nodes[i] = NULL;
+	}
+	dprintf( 2, "window list size is %i\n", list->max );
+	AddNodeToList( n, list );
 }
 
-void RemoveNodeFromList( node_t* n, node_t** list, int* top ) {
+void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 	int i;
 
-	for ( i = 0 ; i < *top; i++ ) {
-		if ( list[i] == n ) {
-			list[i] = NULL;
+	for ( i = 0 ; i < list->max; i++ ) {
+		if ( list->nodes[i] == n ) {
 			break;
 		}
 	}
-	for ( i++ ; i < *top; i++ ) {
-		list[i - 1] = list[i];
-		if ( list[i] == NULL ) {
+	for ( i++ ; i < list->max; i++ ) {
+		list->nodes[i - 1] = list->nodes[i];
+		if ( list->nodes[i] == NULL ) {
 			break;
 		}
 	}
-	if ( i < *top - 4 ) {
+	if ( i < list->max - 4 ) {
 		dprintf( 2, "shrinking client list\n" );
-		windowList = realloc( windowList, windowListMax -= 4 );
-		if ( windowList == NULL ) {
+		list = realloc( list, sizeof( node_t ) * ( list->max -= 4 ) );
+		if ( list == NULL ) {
 			fprintf( stderr, "failure shrinking client list\n" );
 			Quit( 2 );
 		}
-		dprintf( 2, "client list size is %i\n", *top );
+		dprintf( 2, "client list size is %i\n", list->max );
 	}
-
 }
 
 node_t* GetParentFrame( node_t* n ) {
@@ -193,9 +194,9 @@ node_t* CreateNode( nodeType_t type, xcb_window_t wnd, node_t* parent, short wid
 	node_t* n = calloc( 1, sizeof( node_t ) );
 	if ( !n )
 		return NULL;
-	n->childrenMax = 4;
-	n->children = calloc( n->childrenMax, sizeof( node_t*) );
-	if ( !n->children ) {
+	n->children.max = 4;
+	n->children.nodes = calloc( n->children.max, sizeof( node_t*) );
+	if ( !n->children.nodes ) {
 		free(n);
 		return NULL;
 	}
@@ -220,38 +221,38 @@ void DestroyNode( node_t* n ) {
 		return;
 
 	// reparent any child windows
-	if ( n->children && n->ppparent && n->ppparent->children ) {
-		for ( i = 0; ( i < n->childrenMax ) && ( n->children[i] != NULL ); i++ ) {
+	if ( n->children.nodes && n->ppparent && n->ppparent->children.nodes ) {
+		for ( i = 0; ( i < n->children.max ) && ( n->children.nodes[i] != NULL ); i++ ) {
 			xcb_reparent_window( c, n->window, n->ppparent->window, n->x, n->y );
-			AddNodeToList( n->children[i], n->ppparent->children, &n->ppparent->childrenMax );
-			RemoveNodeFromList( n->children[i], n->children, &n->childrenMax );
+			AddNodeToList( n->children.nodes[i], &n->ppparent->children );
+			RemoveNodeFromList( n->children.nodes[i], &n->children );
 		}
 	}
 
-	RemoveNodeFromList( n, windowList, &windowListMax );
+	RemoveNodeFromList( n, &windowList );
 	xcb_destroy_window( c, n->window );
 
 	// if our parent is a frame or group, and it is empty, it should also be destroyed
 	if ( ( n->ppparent->type == NODE_FRAME ) || ( n->ppparent->type == NODE_GROUP ) ) {
-		if ( ( n->ppparent->children ) && ( n->ppparent->children[i] == NULL ) ) {
+		if ( ( n->ppparent->children.nodes ) && ( n->ppparent->children.nodes[i] == NULL ) ) {
 			DestroyNode( n->ppparent );
 		}
 	}
-	free( n->children );
+	free( n->children.nodes );
 	free( n );
 	xcb_flush( c );
 }
 
 void Cleanup( void ) {
-	if ( !windowList )
+	if ( !windowList.nodes )
 		return;
 
-	while ( windowList[1] != NULL ) {
-		DestroyNode( windowList[0] );
+	while ( windowList.nodes[1] != NULL ) {
+		DestroyNode( windowList.nodes[0] );
 	}
-	free( windowList[0]->children );
-	free( windowList[0] );
-	free( windowList );
+	free( windowList.nodes[0]->children.nodes );
+	free( windowList.nodes[0] );
+	free( windowList.nodes );
 
 	xcb_disconnect( c );
 }
@@ -298,8 +299,8 @@ void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigne
 	unsigned int pv[5] = {
 		nx, 
 		ny, 
-		width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT, 
-		height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM, 
+		width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1, 
+		height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1, 
 		0
 	};
 	unsigned int cv[3] = {
@@ -340,7 +341,7 @@ void DrawFrame( node_t *node ) {
 	free( s );
 	textPos = ( ( node->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
 
-	if ( frame == windowList[0] ) {
+	if ( frame == windowList.nodes[0] ) {
 		SGrafDrawFill( frame->window, colorLightGrey, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
 		SGrafDrawRect( frame->window, colorBlack, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
 
@@ -377,9 +378,9 @@ void DrawFrame( node_t *node ) {
 
 node_t* GetNodeByWindow( xcb_window_t w ) {
 	int i;
-	for ( i = 0 ; i < windowListMax; i++ )
-		if ( ( windowList[i] == NULL ) || ( windowList[i]->window == w ) )
-			return windowList[i];
+	for ( i = 0 ; i < windowList.max; i++ )
+		if ( ( windowList.nodes[i] == NULL ) || ( windowList.nodes[i]->window == w ) )
+			return windowList.nodes[i];
 	return NULL;
 }
 
@@ -388,9 +389,18 @@ void RaiseClient( node_t *n ) {
 	unsigned int v[1] = { XCB_STACK_MODE_ABOVE };
 	int i;
 
-	for ( i = 1; ( i < windowListMax ) && ( windowList[i] != NULL ) && ( windowList[i] != n ); i++ )
-		windowList[i] = windowList[i - 1];
-	windowList[0] = n;
+	if ( !n )
+		return;
+
+	for ( i = 0; ( i < windowList.max ) && ( windowList.nodes[i] != NULL ) && ( windowList.nodes[i] != n ); i++ ) ;;
+	if ( i >= windowList.max || windowList.nodes[i] == NULL )
+		return;
+
+	for ( ; i > 1 ; i-- ) {
+		windowList.nodes[i] = windowList.nodes[i - 1];
+	}
+
+	windowList.nodes[0] = n;
 
 	xcb_set_input_focus( c, XCB_INPUT_FOCUS_NONE, n->window, 0 );
 
@@ -494,7 +504,7 @@ void SetupRoot() {
 	rootNode->window = screen->root;
 
 	SetRootBackground();
-	AddNodeToList(rootNode, windowList, &windowListMax );
+	AddNodeToList(rootNode, &windowList );
 }
 
 void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, unsigned short width, unsigned short height, unsigned char override_redirect ) {
@@ -511,7 +521,10 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 	if ( GetNodeByWindow( win ) != NULL )
 		return;
 	p = GetNodeByWindow( parent );
+	if ( !p )
+		p = rootNode;
 	n = CreateNode( NODE_CLIENT, win, p, width, height, x, y );
+
 
 	n->managementState = STATE_WITHDRAWN;
 
@@ -520,14 +533,17 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 		xcb_window_t frame = xcb_generate_id( c );
 		int frameWidth = width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1;
 		int frameHeight = height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1;
-		xcb_create_window (		c, XCB_COPY_FROM_PARENT, n->parent, screen->root, 
+		xcb_create_window (		c, XCB_COPY_FROM_PARENT, frame, screen->root, 
 						0, 0, frameWidth, frameHeight, 
 						0, XCB_WINDOW_CLASS_INPUT_OUTPUT, screen->root_visual, 
 						XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, v);
 		p = CreateNode( NODE_FRAME, frame, rootNode, frameWidth, frameHeight, x, y );
-		xcb_reparent_window( c, n->window, n->parent, 1, 19 );
-		AddNodeToList( p, windowList, &windowListMax );
+		xcb_reparent_window( c, n->window, p->window, BORDER_SIZE_LEFT, BORDER_SIZE_TOP );
+		n->ppparent = p;
+		AddNodeToList( p, &windowList );
+		AddNodeToList( p, &rootNode->children );
 		p->managementState = n->managementState = STATE_REPARENTED;
+		printf( "New normal window\n");
 	} else if ( p != rootNode ) {
 		n->managementState = STATE_CHILD;
 		printf( "New child window\n" );
@@ -540,8 +556,8 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 						XCB_EVENT_MASK_BUTTON_RELEASE | 
 						XCB_EVENT_MASK_POINTER_MOTION;
 	xcb_change_window_attributes( c, n->window, XCB_CW_EVENT_MASK, v );
-	AddNodeToList( p, p->children, &p->childrenMax );
-	AddNodeToList( n, windowList, &windowListMax );
+	AddNodeToList( n, &p->children );
+	AddNodeToList( n, &windowList );
 	RaiseClient( n );
 	xcb_flush( c );
 }
@@ -591,7 +607,7 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 		RaiseClient( n );
 		return;
 	}
-	if ( n->parent == activeWindow ) {
+	if ( n == windowList.nodes[0] ) {
 		// (9,4) (20,15)
 		if ( mouseIsOverCloseButton ) {
 			wmState = WMSTATE_CLOSE;
@@ -623,19 +639,19 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 
 				xcb_client_message_event_t *msg = calloc(32, 1);
 				msg->response_type = XCB_CLIENT_MESSAGE;
-				msg->window = windowList[0]->window;
+				msg->window = windowList.nodes[0]->window;
 				msg->format = 32;
 				msg->sequence = 0;
 				msg->type = WM_PROTOCOLS;
 				msg->data.data32[0] = WM_DELETE_WINDOW;
 				msg->data.data32[1] = XCB_CURRENT_TIME;
-				xcb_send_event( c, 0, windowList[0]->window, XCB_EVENT_MASK_NO_EVENT, (char*)msg );
+				xcb_send_event( c, 0, windowList.nodes[0]->window, XCB_EVENT_MASK_NO_EVENT, (char*)msg );
 				
 				xcb_flush( c );
 				free( msg );
 			}
 			wmState = WMSTATE_IDLE;
-			DrawFrame( windowList[0] );
+			DrawFrame( windowList.nodes[0] );
 			break;
 		default:
 			wmState = WMSTATE_IDLE;
@@ -658,7 +674,7 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 	}
 
 	if ( wmState == WMSTATE_CLOSE ) {
-		DrawFrame( windowList[0] );
+		DrawFrame( windowList.nodes[0] );
 	}
 
 	if ( wmState == WMSTATE_DRAG ) {
@@ -674,9 +690,6 @@ void DoExpose( xcb_expose_event_t *e ) {
 }
 
 void DoCreateNotify( xcb_create_notify_event_t *e ) {
-	/*if ( e->parent != screen->root ) {
-		return;
-	}*/
 	ReparentWindow( e->window, e->parent, e->x, e->y, e->width, e->height, e->override_redirect );
 }
 
@@ -690,6 +703,7 @@ void DoDestroy( xcb_destroy_notify_event_t *e ) {
 
 void DoMapRequest( xcb_map_request_event_t *e ) {
 	node_t *n = GetNodeByWindow( e->window );
+	node_t *p = GetParentFrame( n );
 
 	/* Todo:
 		Add ICCCM section 4.1.4 compatibility
@@ -699,7 +713,8 @@ void DoMapRequest( xcb_map_request_event_t *e ) {
 		return;
 	}
 	n->windowState = STATE_NORMAL;
-	xcb_map_window( c, n->parent );
+	if ( p )
+		xcb_map_window( c, p->window );
 	xcb_map_window( c, n->window );
 	xcb_flush( c );
 	RaiseClient( n );
@@ -711,6 +726,7 @@ void DoMapRequest( xcb_map_request_event_t *e ) {
 //if and only if they are already mapped
 void DoMapNotify( xcb_map_notify_event_t *e ) {
 	node_t *n = GetNodeByWindow( e->window );
+	node_t *p = GetParentFrame( n );
 
 	if ( n == NULL ) {
 		return;
@@ -718,7 +734,8 @@ void DoMapNotify( xcb_map_notify_event_t *e ) {
 	if ( n->parentMapped == 0 ) {  
 		n->windowState = STATE_NORMAL;
 		n->parentMapped = 1;
-		xcb_map_window( c, n->parent );
+		if ( p )
+			xcb_map_window( c, p->window );
 		xcb_flush( c );
 		RaiseClient( n );
 	}
@@ -726,6 +743,7 @@ void DoMapNotify( xcb_map_notify_event_t *e ) {
 
 void DoUnmapNotify( xcb_unmap_notify_event_t *e ) {
 	node_t *n = GetNodeByWindow( e->window );
+	node_t *p = GetParentFrame( n );
 
 	if ( n == NULL ) {
 		return;
@@ -733,7 +751,8 @@ void DoUnmapNotify( xcb_unmap_notify_event_t *e ) {
 	if ( n->parentMapped == 1 ) {
 		n->windowState = STATE_WITHDRAWN;
 		n->parentMapped = 0;
-		xcb_unmap_window( c, n->parent );
+		if ( p )
+			xcb_unmap_window( c, p->window );
 		xcb_flush( c );
 	}
 }
@@ -758,6 +777,9 @@ void DoConfigureRequest( xcb_configure_request_event_t *e ) {
 void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 	node_t *n = GetNodeByWindow( e->window );
 	node_t *p;
+
+	if ( !n )
+		return;
 
 	n->x = e->x;
 	n->y = e->y;
@@ -852,8 +874,9 @@ int main( int argc, char** argv ) {
 	}
 
 	/* initialize the client list to empty */
-	windowList = calloc( sizeof ( node_t* ), windowListMax );
-	windowList[0] = NULL;
+	windowList.max = 4;
+	windowList.nodes = calloc( sizeof ( node_t* ), windowList.max );
+	windowList.nodes[0] = NULL;
 
 	SetupAtoms();
 	SetupColors();
