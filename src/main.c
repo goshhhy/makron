@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <string.h>
 #include <stdarg.h>
+#include <assert.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_atom.h>
 #include <sulfur/sulfur.h>
@@ -144,7 +145,7 @@ void AddNodeToList( node_t* n, nodeList_t* list ) {
 			return;
 		}
 	}
-	dprintf( 2, "growing client list\n" );
+	dprintf( 2, "growing client list (current max is %i\n)\n", list->max );
 	list->nodes = realloc( list->nodes, sizeof ( node_t ) * ( list->max += 4 ) );
 	if ( list->nodes == NULL ) {
 		fprintf( stderr, "failure growing window list\n" );
@@ -162,10 +163,16 @@ void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 
 	for ( i = 0 ; i < list->max; i++ ) {
 		if ( list->nodes[i] == n ) {
+			printf( "removing node from position %i\n", i );
 			break;
 		}
 	}
+	if ( i >= list->max ) {
+		printf( "node not found\n" );
+		return;
+	}
 	for ( i++ ; i < list->max; i++ ) {
+		printf( "shift node from position %i to %i\n", i, i - 1 );
 		list->nodes[i - 1] = list->nodes[i];
 		if ( list->nodes[i] == NULL ) {
 			break;
@@ -230,6 +237,7 @@ void DestroyNode( node_t* n ) {
 	}
 
 	RemoveNodeFromList( n, &windowList );
+	RemoveNodeFromList( n, &n->ppparent->children );
 	xcb_destroy_window( c, n->window );
 
 	// if our parent is a frame or group, and it is empty, it should also be destroyed
@@ -299,8 +307,8 @@ void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigne
 	unsigned int pv[5] = {
 		nx, 
 		ny, 
-		width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 1, 
-		height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 1, 
+		width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT + 2, 
+		height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM + 2, 
 		0
 	};
 	unsigned int cv[3] = {
@@ -341,7 +349,7 @@ void DrawFrame( node_t *node ) {
 	free( s );
 	textPos = ( ( node->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
 
-	if ( frame == windowList.nodes[0] ) {
+	if ( frame->children.nodes[0] == windowList.nodes[0] ) {
 		SGrafDrawFill( frame->window, colorLightGrey, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
 		SGrafDrawRect( frame->window, colorBlack, 0, 0, frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT - 1, frame->height + BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM - 1 );
 
@@ -388,6 +396,7 @@ void RaiseClient( node_t *n ) {
 	unsigned short mask = XCB_CONFIG_WINDOW_STACK_MODE;
 	unsigned int v[1] = { XCB_STACK_MODE_ABOVE };
 	node_t* p = GetParentFrame( n );
+	node_t* old = GetParentFrame( windowList.nodes[0] );
 	int i;
 
 	if ( n == p )
@@ -400,17 +409,18 @@ void RaiseClient( node_t *n ) {
 	if ( i >= windowList.max || windowList.nodes[i] == NULL )
 		return;
 
-	for ( ; i > 1 ; i-- ) {
+	for ( ; i >= 1 ; i-- )
 		windowList.nodes[i] = windowList.nodes[i - 1];
-	}
 
 	windowList.nodes[0] = n;
 
 	xcb_set_input_focus( c, XCB_INPUT_FOCUS_NONE, n->window, 0 );
 
-	DrawFrame( n );
+	DrawFrame( p );
+	DrawFrame( old );
 	xcb_configure_window( c, n->window, mask, v );
 	xcb_flush( c );
+	printf( "done\n" );
 }
 
 void SetupColors() {
@@ -502,11 +512,8 @@ void SetRootBackground() {
 }
 
 void SetupRoot() {
-	rootNode = calloc( 1, sizeof( node_t ) );
-
-	rootNode->type = NODE_ROOT;
-	rootNode->window = screen->root;
-
+	rootNode = CreateNode( NODE_ROOT, screen->root, NULL, 0, 0, 0, 0 );
+	assert( windowList.max == 4 );
 	SetRootBackground();
 	AddNodeToList(rootNode, &windowList );
 }
@@ -601,16 +608,14 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 	node_t *n = GetNodeByWindow( e->event );
 
 	printf( "button press on window %x\n", e->event );
-	
+	RaiseClient( n );
 	if ( n->type == NODE_CLIENT ) {
-		printf( "is client window\n" );
-		RaiseClient( n );
+		printf( "is client window\n" );	
 		return;
 	}
 	if ( n->type == NODE_FRAME ) {
 		// (9,4) (20,15)
 		printf( "it's a frame\n" );
-		RaiseClient( n );
 		if ( mouseIsOverCloseButton ) {
 			wmState = WMSTATE_CLOSE;
 			printf("Close clicked!\n");
@@ -668,9 +673,6 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 	mouseLastKnownX = e->root_x;
 	mouseLastKnownY = e->root_y;
 
-	printf("motionnotify %i %i ", e->root_x, e->root_y );
-
-
 	mouseIsOverCloseButton = 0;
 	if ( e->event_x >= 9 && e->event_x <= 20 ) {
 		if ( e->event_y >= 4 && e->event_y <= 15 ) {
@@ -683,18 +685,16 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 	}
 
 	if ( wmState == WMSTATE_DRAG ) {
-		printf("dragging");
 		x = e->root_x - dragStartX;
 		y =  e->root_y - dragStartY;
 		int w = dragClient->children.nodes[0]->width;
 		int h = dragClient->children.nodes[0]->height;
 		ConfigureClient( dragClient->children.nodes[0], x, y, w, h );
 	}
-	printf("\n");
 }
 
 void DoExpose( xcb_expose_event_t *e ) {
-	DrawFrame( GetNodeByWindow( e->window ) );
+	DrawFrame( GetParentFrame( GetNodeByWindow( e->window ) ) );
 	SetRootBackground();
 }
 
@@ -884,8 +884,7 @@ int main( int argc, char** argv ) {
 
 	/* initialize the client list to empty */
 	windowList.max = 4;
-	windowList.nodes = calloc( sizeof ( node_t* ), windowList.max );
-	windowList.nodes[0] = NULL;
+	windowList.nodes = calloc( windowList.max, sizeof ( node_t* ) );
 
 	SetupAtoms();
 	SetupColors();
