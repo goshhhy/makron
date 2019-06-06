@@ -14,7 +14,7 @@
 #define VERSION_MINOR 2
 #define VERSION_PATCH 0
 #define VERSION_STRING "0.2.0"
-#define VERSION_BUILDSTR "38"
+#define VERSION_BUILDSTR "39"
 
 #define BORDER_SIZE_LEFT 1
 #define BORDER_SIZE_RIGHT 1
@@ -162,7 +162,6 @@ void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 
 	for ( i = 0 ; i < list->max; i++ ) {
 		if ( list->nodes[i] == n ) {
-			printf( "removing node from position %i\n", i );
 			break;
 		}
 	}
@@ -171,7 +170,6 @@ void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 		return;
 	}
 	for ( i++ ; i < list->max; i++ ) {
-		printf( "shift node from position %i to %i\n", i, i - 1 );
 		list->nodes[i - 1] = list->nodes[i];
 		if ( list->nodes[i] == NULL ) {
 			break;
@@ -570,6 +568,8 @@ void ReparentExistingWindows() {
 	xcb_query_tree_reply_t *treereply;
 	xcb_get_geometry_cookie_t geocookie;
 	xcb_get_geometry_reply_t *georeply;
+	xcb_get_window_attributes_cookie_t attrcookie;
+	xcb_get_window_attributes_reply_t *attrreply;
 	int i;
 	xcb_window_t *children;
 
@@ -582,10 +582,15 @@ void ReparentExistingWindows() {
 	for( i = 0; i < xcb_query_tree_children_length( treereply ); i++ ) {
 		geocookie = xcb_get_geometry( c, children[i] );
 		georeply = xcb_get_geometry_reply( c, geocookie, NULL );
-		if ( georeply != NULL ) {
+		attrcookie = xcb_get_window_attributes( c, children[i] );
+		attrreply = xcb_get_window_attributes_reply( c, attrcookie, NULL );
+		if ( ( georeply != NULL ) && ( attrreply != NULL) && ( attrreply->override_redirect == 0 ) ) {
 			ReparentWindow( children[i], screen->root, georeply->x, georeply->y, georeply->width, georeply->height, 0 );
-			free( georeply );
 		}
+		if ( georeply )
+			free( georeply );
+		if ( attrreply )
+			free ( attrreply );
 	}
 	free( treereply );
 }
@@ -606,11 +611,8 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 		return;
 	}
 	if ( n->type == NODE_FRAME ) {
-		// (9,4) (20,15)
-		printf( "it's a frame\n" );
 		if ( mouseIsOverCloseButton ) {
 			wmState = WMSTATE_CLOSE;
-			printf("Close clicked!\n");
 			DrawFrame( n );
 			return;
 		} else {
