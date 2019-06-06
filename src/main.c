@@ -276,7 +276,7 @@ void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigne
 	int i;
 	node_t *p = GetParentFrame( n );
 
-	if ( n == NULL )
+	if ( n == NULL || n->type == NODE_FRAME )
 		return;
 
 	nx = x;
@@ -778,7 +778,7 @@ void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 	node_t *n = GetNodeByWindow( e->window );
 	node_t *p;
 
-	if ( !n )
+	if ( !n || n->type == NODE_FRAME )
 		return;
 
 	n->x = e->x;
@@ -794,8 +794,8 @@ void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 	if ( p != NULL ) {
 		p->x = e->x;
 		p->y = e->y;
-		p->width = e->width - ( BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT );
-		p->height = e->height - ( BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM );
+		p->width = e->width + ( BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) + 1;
+		p->height = e->height + ( BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM ) + 1;
 		return;
 	}
 }
