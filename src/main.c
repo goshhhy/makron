@@ -387,7 +387,11 @@ node_t* GetNodeByWindow( xcb_window_t w ) {
 void RaiseClient( node_t *n ) {
 	unsigned short mask = XCB_CONFIG_WINDOW_STACK_MODE;
 	unsigned int v[1] = { XCB_STACK_MODE_ABOVE };
+	node_t* p = GetParentFrame( n );
 	int i;
+
+	if ( n == p )
+		n = p->children.nodes[0];
 
 	if ( !n )
 		return;
@@ -598,29 +602,27 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 
 	printf( "button press on window %x\n", e->event );
 	
-	if ( n == NULL ) {
-		n = GetNodeByWindow( e->event );
+	if ( n->type == NODE_CLIENT ) {
 		printf( "is client window\n" );
-		if ( n == NULL ) {
-			return;
-		}	
 		RaiseClient( n );
 		return;
 	}
-	if ( n == windowList.nodes[0] ) {
+	if ( n->type == NODE_FRAME ) {
 		// (9,4) (20,15)
+		printf( "it's a frame\n" );
+		RaiseClient( n );
 		if ( mouseIsOverCloseButton ) {
 			wmState = WMSTATE_CLOSE;
 			printf("Close clicked!\n");
 			DrawFrame( n );
 			return;
+		} else {
+			dragClient = n;
+			wmState = WMSTATE_DRAG;
+			dragStartX = e->event_x;
+			dragStartY = e->event_y;
 		}
 	}
-	RaiseClient( n );
-	dragClient = n;
-	wmState = WMSTATE_DRAG;
-	dragStartX = e->event_x;
-	dragStartY = e->event_y;
 }
 
 void DoButtonRelease( xcb_button_release_event_t *e ) {
@@ -666,6 +668,9 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 	mouseLastKnownX = e->root_x;
 	mouseLastKnownY = e->root_y;
 
+	printf("motionnotify %i %i ", e->root_x, e->root_y );
+
+
 	mouseIsOverCloseButton = 0;
 	if ( e->event_x >= 9 && e->event_x <= 20 ) {
 		if ( e->event_y >= 4 && e->event_y <= 15 ) {
@@ -678,10 +683,14 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 	}
 
 	if ( wmState == WMSTATE_DRAG ) {
+		printf("dragging");
 		x = e->root_x - dragStartX;
 		y =  e->root_y - dragStartY;
-		ConfigureClient( dragClient, x, y, dragClient->width, dragClient->height );
+		int w = dragClient->children.nodes[0]->width;
+		int h = dragClient->children.nodes[0]->height;
+		ConfigureClient( dragClient->children.nodes[0], x, y, w, h );
 	}
+	printf("\n");
 }
 
 void DoExpose( xcb_expose_event_t *e ) {
