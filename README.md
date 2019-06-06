@@ -7,3 +7,8 @@ did what i wanted, and now i have a window manager that doesn't do what i want.
 i'm working on rewriting and expanding it so that it works for me.
 
 it has bare minimum levels of functionality, so you are free to try it out.
+
+screenshots
+===========
+
+![photo of makron in use with several client applications](makron.png)
