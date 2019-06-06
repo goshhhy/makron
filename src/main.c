@@ -64,7 +64,7 @@ typedef struct node_s {
 
 	xcb_window_t window;
 	
-	struct node_s* ppparent;
+	struct node_s* parent;
 
 	char parentMapped;
 
@@ -191,7 +191,7 @@ void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 
 node_t* GetParentFrame( node_t* n ) {
 	node_t* p;
-	for ( p = n; ( p != NULL ) && ( p->type != NODE_FRAME ); p = p->ppparent ) {
+	for ( p = n; ( p != NULL ) && ( p->type != NODE_FRAME ); p = p->parent ) {
 		;;
 	}
 	return p;
@@ -213,7 +213,7 @@ node_t* CreateNode( nodeType_t type, xcb_window_t wnd, node_t* parent, short wid
 	n->windowState = STATE_WITHDRAWN;
 	n->type = type;
 	n->window = wnd;
-	n->ppparent = parent;
+	n->parent = parent;
 	n->width = width;
 	n->height = height;
 	n->x = x;
@@ -228,22 +228,22 @@ void DestroyNode( node_t* n ) {
 		return;
 
 	// reparent any child windows
-	if ( n->children.nodes && n->ppparent && n->ppparent->children.nodes ) {
+	if ( n->children.nodes && n->parent && n->parent->children.nodes ) {
 		for ( i = 0; ( i < n->children.max ) && ( n->children.nodes[i] != NULL ); i++ ) {
-			xcb_reparent_window( c, n->window, n->ppparent->window, n->x, n->y );
-			AddNodeToList( n->children.nodes[i], &n->ppparent->children );
+			xcb_reparent_window( c, n->window, n->parent->window, n->x, n->y );
+			AddNodeToList( n->children.nodes[i], &n->parent->children );
 			RemoveNodeFromList( n->children.nodes[i], &n->children );
 		}
 	}
 
 	RemoveNodeFromList( n, &windowList );
-	RemoveNodeFromList( n, &n->ppparent->children );
+	RemoveNodeFromList( n, &n->parent->children );
 	xcb_destroy_window( c, n->window );
 
 	// if our parent is a frame or group, and it is empty, it should also be destroyed
-	if ( ( n->ppparent->type == NODE_FRAME ) || ( n->ppparent->type == NODE_GROUP ) ) {
-		if ( ( n->ppparent->children.nodes ) && ( n->ppparent->children.nodes[i] == NULL ) ) {
-			DestroyNode( n->ppparent );
+	if ( ( n->parent->type == NODE_FRAME ) || ( n->parent->type == NODE_GROUP ) ) {
+		if ( ( n->parent->children.nodes ) && ( n->parent->children.nodes[i] == NULL ) ) {
+			DestroyNode( n->parent );
 		}
 	}
 	free( n->children.nodes );
@@ -550,7 +550,7 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 						XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK, v);
 		p = CreateNode( NODE_FRAME, frame, rootNode, frameWidth, frameHeight, x, y );
 		xcb_reparent_window( c, n->window, p->window, BORDER_SIZE_LEFT, BORDER_SIZE_TOP );
-		n->ppparent = p;
+		n->parent = p;
 		AddNodeToList( p, &windowList );
 		AddNodeToList( p, &rootNode->children );
 		p->managementState = n->managementState = STATE_REPARENTED;
