@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdarg.h>
 #include <assert.h>
+#include <unistd.h>
 #include <xcb/xcb.h>
 #include <xcb/xcb_atom.h>
 #include <sulfur/sulfur.h>
@@ -42,6 +43,7 @@ typedef enum {
 typedef enum {
 	WMSTATE_IDLE,
 	WMSTATE_DRAG,
+	WMSTATE_RESIZE,
 	WMSTATE_CLOSE
 } wmState_t;
 
@@ -107,6 +109,12 @@ xcb_font_t windowFont;
 xcb_atom_t WM_DELETE_WINDOW;
 xcb_atom_t WM_PROTOCOLS;
 
+typedef enum {
+	RESIZE_NONE = 0,
+	RESIZE_HORIZONTAL = 1,
+	RESIZE_VERTICAL = 2,
+} resizeDir_t;
+
 wmState_t wmState = WMSTATE_IDLE;
 node_t *dragClient;
 short dragStartX;
@@ -114,9 +122,14 @@ short dragStartY;
 short mouseLastKnownX;
 short mouseLastKnownY;
 short mouseIsOverCloseButton;
+resizeDir_t resizeDir;
 
 // list of all windows, in most recently raised order
 nodeList_t windowList;
+
+nodeList_t redrawList;
+
+
 /*
 =================
 Support functions
@@ -139,7 +152,7 @@ void AddNodeToList( node_t* n, nodeList_t* list ) {
 	int i;
 
 	for ( i = 0 ; i < list->max; i++ ) {
-		if ( list->nodes[i] == NULL ) {
+		if ( list->nodes[i] == NULL || list->nodes[i] == n ) {
 			list->nodes[i] = n;
 			return;
 		}
@@ -308,11 +321,17 @@ void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigne
 		0
 	};
 	unsigned int cv[3] = {
-		width, 
-		height, 
+		width,
+		height,
 		0
 	};
-	if ( p != NULL )
+	p->x = nx;
+	p->y = ny;
+	p->width = pv[2];
+	p->height = pv[3];
+	n->width = cv[0];
+	n->height = cv[1];
+	if ( p != NULL && n->parent == p )
 		xcb_configure_window( c, p->window, pmask, pv );
 	xcb_configure_window( c, n->window, cmask, cv );
 }
@@ -374,7 +393,6 @@ void DrawFrame( node_t *node ) {
 		SGrafDrawLine( frame->window, colorDarkGrey, 1, BORDER_SIZE_TOP - 1, frame->width - 1, BORDER_SIZE_TOP - 1 );
 		xcb_image_text_8( c, textLen, frame->window, inactiveFontContext, textPos, 14, frame->name );
 	}
-
 	return;
 }
 
@@ -410,8 +428,8 @@ void RaiseClient( node_t *n ) {
 
 	xcb_set_input_focus( c, XCB_INPUT_FOCUS_NONE, n->window, 0 );
 
-	DrawFrame( p );
-	DrawFrame( old );
+	AddNodeToList( p, &redrawList );
+	AddNodeToList( old, &redrawList );
 	xcb_configure_window( c, n->window, mask, v );
 	printf( "done\n" );
 }
@@ -512,6 +530,8 @@ void SetupRoot() {
 void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, unsigned short width, unsigned short height, unsigned char override_redirect ) {
 	node_t* n;
 	node_t* p;
+	xcb_void_cookie_t cookie;
+	xcb_generic_error_t *error;
 	unsigned int v[2] = { 	colorWhite, 
 							XCB_EVENT_MASK_EXPOSURE | 
 							XCB_EVENT_MASK_BUTTON_PRESS | 
@@ -548,16 +568,24 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 		printf( "New normal window\n");
 	} else if ( p != rootNode ) {
 		n->managementState = STATE_CHILD;
-		printf( "New child window\n" );
+		printf( "New child window %x (child of %x)\n", n->window, p->window );
 	} else {
 		n->managementState = STATE_NO_REDIRECT;
 		printf( "New unreparented window\n" );
 	}
 
-	v[0] = XCB_EVENT_MASK_PROPERTY_CHANGE | XCB_EVENT_MASK_BUTTON_PRESS | 
-						XCB_EVENT_MASK_BUTTON_RELEASE | 
-						XCB_EVENT_MASK_POINTER_MOTION;
-	xcb_change_window_attributes( c, n->window, XCB_CW_EVENT_MASK, v );
+	v[0] = 	XCB_EVENT_MASK_EXPOSURE | 
+						XCB_EVENT_MASK_PROPERTY_CHANGE |
+						XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | 
+						XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+
+	cookie = xcb_change_window_attributes_checked( c, n->window, XCB_CW_EVENT_MASK, v );
+	error = xcb_request_check( c, cookie );
+	if ( error ) {
+		fprintf( stderr, "attribute change machine broke. error code %hhu\n", error->error_code );
+		free( error );
+	}
+	
 	AddNodeToList( n, &p->children );
 	AddNodeToList( n, &windowList );
 	RaiseClient( n );
@@ -613,11 +641,25 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 	if ( n->type == NODE_FRAME ) {
 		if ( mouseIsOverCloseButton ) {
 			wmState = WMSTATE_CLOSE;
-			DrawFrame( n );
+			AddNodeToList( n, &redrawList );
 			return;
 		} else {
+			if ( e->event_x > n->width - 8 || e->event_y > n->height - 8 ) {
+				wmState = WMSTATE_RESIZE;
+				resizeDir = RESIZE_NONE;
+				printf( "resize " );
+				if ( e->event_x > n->width - 8 ) {
+					resizeDir |= RESIZE_HORIZONTAL;
+					printf( "horizontal" );
+				}
+				if ( e->event_y > n->height - 1 ) {
+					resizeDir |= RESIZE_VERTICAL;
+					printf( "vertical" );
+				}
+			} else {
+				wmState = WMSTATE_DRAG;
+			}
 			dragClient = n;
-			wmState = WMSTATE_DRAG;
 			dragStartX = e->event_x;
 			dragStartY = e->event_y;
 		}
@@ -629,7 +671,9 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 		case WMSTATE_IDLE:
 			break;
 		case WMSTATE_DRAG:
+		case WMSTATE_RESIZE:
 			wmState = WMSTATE_IDLE;
+			resizeDir = RESIZE_NONE;
 			dragClient = NULL;
 			dragStartX = 0;
 			dragStartY = 0;
@@ -651,7 +695,7 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 				free( msg );
 			}
 			wmState = WMSTATE_IDLE;
-			DrawFrame( windowList.nodes[0] );
+			AddNodeToList( windowList.nodes[0], &redrawList );
 			break;
 		default:
 			wmState = WMSTATE_IDLE;
@@ -674,7 +718,7 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 	}
 
 	if ( wmState == WMSTATE_CLOSE ) {
-		DrawFrame( windowList.nodes[0] );
+		AddNodeToList( windowList.nodes[0], &redrawList );
 	}
 
 	if ( wmState == WMSTATE_DRAG ) {
@@ -684,10 +728,17 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 		int h = dragClient->children.nodes[0]->height;
 		ConfigureClient( dragClient->children.nodes[0], x, y, w, h );
 	}
+	if ( wmState == WMSTATE_RESIZE ) {
+		x = dragClient->x;
+		y = dragClient->y;
+		int w = dragClient->children.nodes[0]->x + ( e->root_x - x ) - 1;
+		int h = dragClient->children.nodes[0]->y + ( e->root_y - y ) - 1;
+		ConfigureClient( dragClient->children.nodes[0], x, y, w, h );
+	}
 }
 
 void DoExpose( xcb_expose_event_t *e ) {
-	DrawFrame( GetParentFrame( GetNodeByWindow( e->window ) ) );
+	AddNodeToList( GetNodeByWindow( e->window ), &redrawList );
 	SetRootBackground();
 }
 
@@ -770,12 +821,30 @@ void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
 }
 
 void DoConfigureRequest( xcb_configure_request_event_t *e ) {
-	ConfigureClient( GetNodeByWindow( e->window ), e->x, e->y, e->width, e->height );
+	node_t* n = GetNodeByWindow( e->window );
+	node_t* p = GetParentFrame( n );
+	int x = p->x;
+	int y = p->y;
+	int width = n->width;
+	int height = n->height;
+
+	if ( ( e->value_mask & XCB_CONFIG_WINDOW_X ) != 0 )
+		x = e->x;
+	if ( ( e->value_mask & XCB_CONFIG_WINDOW_Y ) != 0 )
+		y = e->y;
+	if ( ( e->value_mask & XCB_CONFIG_WINDOW_WIDTH ) != 0  )
+		width = e->width;
+	if ( ( e->value_mask & XCB_CONFIG_WINDOW_HEIGHT ) != 0 )
+		height = e->height;
+
+	ConfigureClient( n, x, y, width, height );
 }
 
 void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
 	node_t *n = GetNodeByWindow( e->window );
 	node_t *p;
+
+	return;
 
 	if ( !n || n->type == NODE_FRAME )
 		return;
@@ -814,7 +883,7 @@ void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 			if ( len != 0 ) {
 				memset( n->name, '\0', 256 );
 				strncpy( n->name, (char*)xcb_get_property_value( reply ), len > 255 ? 255 : len );
-				DrawFrame( n );
+				AddNodeToList( n, &redrawList );
 			}
 		}	
 		free( reply );
@@ -875,6 +944,9 @@ int main( int argc, char** argv ) {
 	/* initialize the client list to empty */
 	windowList.max = 4;
 	windowList.nodes = calloc( windowList.max, sizeof ( node_t* ) );
+	redrawList.max = 4;
+	redrawList.nodes = calloc( redrawList.max, sizeof ( node_t* ) );
+
 
 	SetupAtoms();
 	SetupColors();
@@ -901,9 +973,13 @@ int main( int argc, char** argv ) {
 				case XCB_CLIENT_MESSAGE: 	DoClientMessage( (xcb_client_message_event_t *)e ); break;
 				default: 					dprintf( 1, "warning, unhandled event #%d\n", e->response_type & ~0x80 ); break;
 			}
-			xcb_flush( c );
 			free( e );
 		}
+		while ( redrawList.nodes[0] != NULL ) {
+			DrawFrame( redrawList.nodes[0] );
+			RemoveNodeFromList( redrawList.nodes[0], &redrawList );
+		}
+		xcb_flush( c );
 		nanosleep( (const struct timespec[]){{0, 4166666L}}, NULL );
 	}
 	Cleanup();
