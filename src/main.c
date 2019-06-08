@@ -15,7 +15,7 @@
 #define VERSION_MINOR 2
 #define VERSION_PATCH 0
 #define VERSION_STRING "0.2.0"
-#define VERSION_BUILDSTR "39"
+#define VERSION_BUILDSTR "40"
 
 #define BORDER_SIZE_LEFT 1
 #define BORDER_SIZE_RIGHT 1
@@ -201,9 +201,8 @@ void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 
 node_t* GetParentFrame( node_t* n ) {
 	node_t* p;
-	for ( p = n; ( p != NULL ) && ( p->type != NODE_FRAME ); p = p->parent ) {
+	for ( p = n; ( p != NULL ) && ( p->type != NODE_FRAME ); p = p->parent )
 		;;
-	}
 	return p;
 }
 
@@ -522,16 +521,13 @@ void SetRootBackground() {
 
 void SetupRoot() {
 	rootNode = CreateNode( NODE_ROOT, screen->root, NULL, 0, 0, 0, 0 );
-	assert( windowList.max == 4 );
-	SetRootBackground();
 	AddNodeToList(rootNode, &windowList );
+	SetRootBackground();
 }
 
 void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, unsigned short width, unsigned short height, unsigned char override_redirect ) {
 	node_t* n;
 	node_t* p;
-	xcb_void_cookie_t cookie;
-	xcb_generic_error_t *error;
 	unsigned int v[2] = { 	colorWhite, 
 							XCB_EVENT_MASK_EXPOSURE | 
 							XCB_EVENT_MASK_BUTTON_PRESS | 
@@ -579,13 +575,7 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 						XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | 
 						XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
 
-	cookie = xcb_change_window_attributes_checked( c, n->window, XCB_CW_EVENT_MASK, v );
-	error = xcb_request_check( c, cookie );
-	if ( error ) {
-		fprintf( stderr, "attribute change machine broke. error code %hhu\n", error->error_code );
-		free( error );
-	}
-	
+	xcb_change_window_attributes( c, n->window, XCB_CW_EVENT_MASK, v );
 	AddNodeToList( n, &p->children );
 	AddNodeToList( n, &windowList );
 	RaiseClient( n );
@@ -647,14 +637,11 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 			if ( e->event_x > n->width - 8 || e->event_y > n->height - 8 ) {
 				wmState = WMSTATE_RESIZE;
 				resizeDir = RESIZE_NONE;
-				printf( "resize " );
 				if ( e->event_x > n->width - 8 ) {
 					resizeDir |= RESIZE_HORIZONTAL;
-					printf( "horizontal" );
 				}
 				if ( e->event_y > n->height - 1 ) {
 					resizeDir |= RESIZE_VERTICAL;
-					printf( "vertical" );
 				}
 			} else {
 				wmState = WMSTATE_DRAG;
@@ -841,31 +828,7 @@ void DoConfigureRequest( xcb_configure_request_event_t *e ) {
 }
 
 void DoConfigureNotify( xcb_configure_notify_event_t *e ) {
-	node_t *n = GetNodeByWindow( e->window );
-	node_t *p;
-
 	return;
-
-	if ( !n || n->type == NODE_FRAME )
-		return;
-
-	n->x = e->x;
-	n->y = e->y;
-	n->width = e->width;
-	n->height = e->height;
-
-	if ( n->type != NODE_CLIENT )
-		return;
-
-	p = GetParentFrame( n );
-
-	if ( p != NULL ) {
-		p->x = e->x;
-		p->y = e->y;
-		p->width = e->width + ( BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) + 1;
-		p->height = e->height + ( BORDER_SIZE_TOP + BORDER_SIZE_BOTTOM ) + 1;
-		return;
-	}
 }
 
 void DoPropertyNotify( xcb_property_notify_event_t *e ) {
@@ -946,7 +909,6 @@ int main( int argc, char** argv ) {
 	windowList.nodes = calloc( windowList.max, sizeof ( node_t* ) );
 	redrawList.max = 4;
 	redrawList.nodes = calloc( redrawList.max, sizeof ( node_t* ) );
-
 
 	SetupAtoms();
 	SetupColors();
