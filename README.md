@@ -8,6 +8,8 @@ i'm working on rewriting and expanding it so that it works for me.
 
 it has bare minimum levels of functionality, so you are free to try it out.
 
+requires [libsulfur](https://github.com/goshhhy/libsulfur).
+
 screenshots
 ===========
 
