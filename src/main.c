@@ -980,7 +980,6 @@ int main( int argc, char** argv ) {
 			RemoveNodeFromList( redrawList.nodes[0], &redrawList );
 		}
 		xcb_flush( c );
-		nanosleep( (const struct timespec[]){{0, 4166666L}}, NULL );
 	}
 	Cleanup();
 	printf( "connection closed. goodbye!\n" );
