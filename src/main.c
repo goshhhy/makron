@@ -220,7 +220,7 @@ node_t* CreateNode( nodeType_t type, xcb_window_t wnd, node_t* parent, short wid
 }
 
 void DestroyNode( node_t* n ) {
-	int i;
+	int i = 0;
 
 	if ( !n || n->type == NODE_ROOT )
 		return;
@@ -241,7 +241,7 @@ void DestroyNode( node_t* n ) {
 
 	// if our parent is a frame or group, and it is empty, it should also be destroyed
 	if ( ( n->parent->type == NODE_FRAME ) || ( n->parent->type == NODE_GROUP ) ) {
-		if ( ( n->parent->children.nodes ) && ( n->parent->children.nodes[i] == NULL ) ) {
+		if ( ( n->parent->children.nodes ) && ( n->parent->children.nodes[0] == NULL ) ) {
 			DestroyNode( n->parent );
 		}
 	}
@@ -253,8 +253,8 @@ void Cleanup( void ) {
 	if ( !windowList.nodes )
 		return;
 
-	while ( windowList.nodes[1] != NULL ) {
-		DestroyNode( windowList.nodes[1] );
+	while ( windowList.nodes[0] != NULL && windowList.nodes[0] != rootNode ) {
+		DestroyNode( windowList.nodes[0] );
 	}
 	free( windowList.nodes[0]->children.nodes );
 	free( windowList.nodes[0] );
@@ -326,10 +326,7 @@ void ConfigureClient( node_t *n, short x, short y, unsigned short width, unsigne
 }
 
 void DrawFrame( node_t *node ) {
-	int i;
-	int textLen = 0, textWidth = 0, textPos = 0;
-	xcb_query_text_extents_reply_t *r;
-	xcb_char2b_t *s;
+	int i, textLen = 0, textWidth = 0, textPos = 0;
 	node_t* frame,* child;
 
 	if( node == NULL || node->managementState == STATE_NO_REDIRECT ) {
@@ -344,16 +341,7 @@ void DrawFrame( node_t *node ) {
 		child = frame;
 
 	textLen = strnlen( child->name, 256 );
-	/*s = calloc( textLen, sizeof( xcb_char2b_t ) );
-	for( int i = 0; i < textLen; i++ ) {
-		s[i].byte1 = 0;
-		s[i].byte2 = child->name[i];
-	}
-	r = xcb_query_text_extents_reply( c, xcb_query_text_extents( c, windowFont, textLen, s ), NULL );
-	*/
 	textWidth = textLen * 6;
-	//free( r ); 
-	//free( s );
 	textPos = ( ( frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
 
 	if ( frame->children.nodes[0] == windowList.nodes[0] ) {
@@ -714,7 +702,6 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 
 void DoExpose( xcb_expose_event_t *e ) {
 	AddNodeToList( GetNodeByWindow( e->window ), &redrawList );
-	SetRootBackground();
 }
 
 void DoCreateNotify( xcb_create_notify_event_t *e ) {
@@ -914,8 +901,9 @@ int main( int argc, char** argv ) {
 	SetupRoot();
 	ReparentExistingWindows();
 
+	e = xcb_wait_for_event( c );
 	while( !xcb_connection_has_error( c ) ) {
-		while( !xcb_connection_has_error( c ) && ( ( e = xcb_poll_for_event( c ) ) != NULL ) ) {
+		do {
 			switch( e->response_type & ~0x80 ) {
 				case XCB_BUTTON_PRESS: 		DoButtonPress( (xcb_button_press_event_t *)e ); break;
 				case XCB_BUTTON_RELEASE: 	DoButtonRelease( (xcb_button_release_event_t *)e ); break;
@@ -933,17 +921,17 @@ int main( int argc, char** argv ) {
 				case XCB_CLIENT_MESSAGE: 	DoClientMessage( (xcb_client_message_event_t *)e ); break;
 				default: 					dbgprintf( 1, "warning, unhandled event #%d\n", e->response_type & ~0x80 ); break;
 			}
-			xcb_flush( c );
 			free( e );
-		}
+		} while( !xcb_connection_has_error( c ) && ( ( e = xcb_poll_for_event( c ) ) != NULL ) );
 		while ( redrawList.nodes[0] != NULL ) {
 			DrawFrame( redrawList.nodes[0] );
 			RemoveNodeFromList( redrawList.nodes[0], &redrawList );
-			xcb_flush( c );
+			SetRootBackground();
 		}
+		xcb_flush( c );
+		e = xcb_wait_for_event( c );
 	}
 	Cleanup();
 	printf( "connection closed. goodbye!\n" );
-
 	return 0;
 }
