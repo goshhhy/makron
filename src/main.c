@@ -157,11 +157,8 @@ void AddNodeToList( node_t* n, nodeList_t* list ) {
 void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 	int i;
 
-	if ( !list || !n ) {
-		fprintf( stderr, "bad list\n" );
-		assert( 1 );
+	if ( !list || !n )
 		return;
-	}
 
 	for ( i = 0 ; i < list->max; i++ ) {
 		if ( list->nodes[i] == n ) {
@@ -173,7 +170,6 @@ void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 		return;
 	}
 	for ( i++ ; i < list->max; i++ ) {
-		assert( list->nodes[i - 1] != list->nodes[i] );
 		list->nodes[i - 1] = list->nodes[i];
 		if ( list->nodes[i] == NULL ) {
 			break;
@@ -181,8 +177,6 @@ void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 	}
 	if ( i >= list->max )
 		list->nodes[list->max - 1] = NULL;
-	if ( list->nodes[list->max - 2] != NULL )
-		assert( list->nodes[list->max - 2] != list->nodes[list->max - 1] );
 	if ( i < list->max - 4 ) {
 		dbgprintf( 2, "shrinking client list\n" );
 		list->nodes = realloc( list->nodes, sizeof( node_t ) * ( list->max -= 4 ) );
