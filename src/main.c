@@ -340,7 +340,7 @@ void DrawFrame( node_t *node ) {
 	int textLen = 0, textWidth = 0, textPos = 0;
 	xcb_query_text_extents_reply_t *r;
 	xcb_char2b_t *s;
-	node_t* frame;
+	node_t* frame,* child;
 
 	if( node == NULL || node->managementState == STATE_NO_REDIRECT ) {
 		return;
@@ -349,12 +349,13 @@ void DrawFrame( node_t *node ) {
 	frame = GetParentFrame( node );
 	if ( !frame )
 		return;
+	child = frame->children.nodes[0];
 
-	textLen = strnlen( node->name, 256 );
+	textLen = strnlen( child->name, 256 );
 	s = malloc( textLen * sizeof( xcb_char2b_t ) );
 	for( int i = 0; i < textLen; i++ ) {
 		s[i].byte1 = 0;
-		s[i].byte2 = node->name[i];
+		s[i].byte2 = child->name[i];
 	}
 	r = xcb_query_text_extents_reply( c, xcb_query_text_extents( c, windowFont, textLen, s ), NULL );
 	textWidth = r->overall_width;
@@ -384,13 +385,13 @@ void DrawFrame( node_t *node ) {
 			SGrafDrawFill( frame->window, colorGrey, 11, 6, 7, 7 );
 		}
 		SGrafDrawFill( frame->window, colorLightGrey, textPos - 8, 3, textWidth + 16, 12 );
-		xcb_image_text_8( c, textLen, frame->window, activeFontContext, textPos, 14, frame->name );
+		xcb_image_text_8( c, textLen, frame->window, activeFontContext, textPos, 14, child->name );
 	} else {
 		SGrafDrawFill( frame->window, colorWhite, 0, 0, frame->width - 1, frame->height - 1 );
 		SGrafDrawRect( frame->window, colorDarkGrey, 0, 0, frame->width - 1, frame->height - 1 );
 
 		SGrafDrawLine( frame->window, colorDarkGrey, 1, BORDER_SIZE_TOP - 1, frame->width - 1, BORDER_SIZE_TOP - 1 );
-		xcb_image_text_8( c, textLen, frame->window, inactiveFontContext, textPos, 14, frame->name );
+		xcb_image_text_8( c, textLen, frame->window, inactiveFontContext, textPos, 14, child->name );
 	}
 	return;
 }
