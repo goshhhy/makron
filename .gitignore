@@ -1,3 +1,5 @@
 makron
 .vscode/
 build/
+callgrind*
+valgrind*
