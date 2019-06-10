@@ -11,9 +11,6 @@
 
 #define PROGRAM_NAME "makron"
 
-#define VERSION_MAJOR 0
-#define VERSION_MINOR 2
-#define VERSION_PATCH 0
 #define VERSION_STRING "0.2.0"
 #define VERSION_BUILDSTR "41"
 
@@ -23,8 +20,6 @@
 #define BORDER_SIZE_BOTTOM 1
 
 #define FONT_NAME "fixed"
-
-#define DEBUGLEVEL 0
 
 typedef enum {
 	STATE_WITHDRAWN = 0,
@@ -63,26 +58,17 @@ typedef struct nodeList_s {
 
 typedef struct node_s {
 	nodeType_t type;
-
 	xcb_window_t window;
-	
+	char name[256];
+	short x, y, width, height;
+
 	struct node_s* parent;
-
+	struct nodeList_s children;
 	char parentMapped;
-
-	short width;
-	short height;
-	short x;
-	short y;
-
+	
 	clientWindowState_t windowState;
 	clientManagementState_t managementState;
-
-	char name[256];
-
 	//todo: gravity
-
-	struct nodeList_s children;
 } node_t;
 
 node_t *rootNode = NULL;
@@ -124,10 +110,8 @@ short mouseLastKnownY;
 short mouseIsOverCloseButton;
 resizeDir_t resizeDir;
 
-// list of all windows, in most recently raised order
-nodeList_t windowList;
-
-nodeList_t redrawList;
+nodeList_t windowList; // list of all windows, in most recently raised order
+nodeList_t redrawList; // list of all windows needing redrawn
 
 
 /*
@@ -142,7 +126,7 @@ void Quit( int r );
 void dbgprintf( int level, char* fmt, ... ) {
 	va_list args;
 	va_start( args, fmt );
-	if ( level >= DEBUGLEVEL ) {
+	if ( level <= debugLevel ) {
 		vprintf( fmt, args );
 	}
 	va_end( args );
@@ -157,7 +141,7 @@ void AddNodeToList( node_t* n, nodeList_t* list ) {
 			return;
 		}
 	}
-	dprintf( 2, "growing client list (current max is %i\n)\n", list->max );
+	dbgprintf( 2, "growing client list (current max is %i\n)\n", list->max );
 	list->nodes = realloc( list->nodes, sizeof ( node_t ) * ( list->max += 4 ) );
 	if ( list->nodes == NULL ) {
 		fprintf( stderr, "failure growing window list\n" );
@@ -166,12 +150,18 @@ void AddNodeToList( node_t* n, nodeList_t* list ) {
 	for ( i = list->max - 4; i < list->max; i++ ) {
 		list->nodes[i] = NULL;
 	}
-	dprintf( 2, "window list size is %i\n", list->max );
+	dbgprintf( 2, "window list size is %i\n", list->max );
 	AddNodeToList( n, list );
 }
 
 void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 	int i;
+
+	if ( !list || !n ) {
+		fprintf( stderr, "bad list\n" );
+		assert( 1 );
+		return;
+	}
 
 	for ( i = 0 ; i < list->max; i++ ) {
 		if ( list->nodes[i] == n ) {
@@ -179,23 +169,28 @@ void RemoveNodeFromList( node_t* n, nodeList_t* list ) {
 		}
 	}
 	if ( i >= list->max ) {
-		printf( "node not found\n" );
+		dbgprintf( 1, "node not found\n" );
 		return;
 	}
 	for ( i++ ; i < list->max; i++ ) {
+		assert( list->nodes[i - 1] != list->nodes[i] );
 		list->nodes[i - 1] = list->nodes[i];
 		if ( list->nodes[i] == NULL ) {
 			break;
 		}
 	}
+	if ( i >= list->max )
+		list->nodes[list->max - 1] = NULL;
+	if ( list->nodes[list->max - 2] != NULL )
+		assert( list->nodes[list->max - 2] != list->nodes[list->max - 1] );
 	if ( i < list->max - 4 ) {
-		dprintf( 2, "shrinking client list\n" );
-		list = realloc( list, sizeof( node_t ) * ( list->max -= 4 ) );
+		dbgprintf( 2, "shrinking client list\n" );
+		list->nodes = realloc( list->nodes, sizeof( node_t ) * ( list->max -= 4 ) );
 		if ( list == NULL ) {
 			fprintf( stderr, "failure shrinking client list\n" );
 			Quit( 2 );
 		}
-		dprintf( 2, "client list size is %i\n", list->max );
+		dbgprintf( 2, "client list size is %i\n", list->max );
 	}
 }
 
@@ -351,18 +346,21 @@ void DrawFrame( node_t *node ) {
 	if ( !frame )
 		return;
 	child = frame->children.nodes[0];
+	if ( !child )
+		child = frame;
 
 	textLen = strnlen( child->name, 256 );
-	s = malloc( textLen * sizeof( xcb_char2b_t ) );
+	/*s = calloc( textLen, sizeof( xcb_char2b_t ) );
 	for( int i = 0; i < textLen; i++ ) {
 		s[i].byte1 = 0;
 		s[i].byte2 = child->name[i];
 	}
 	r = xcb_query_text_extents_reply( c, xcb_query_text_extents( c, windowFont, textLen, s ), NULL );
-	textWidth = r->overall_width;
-	free( r ); 
-	free( s );
-	textPos = ( ( node->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
+	*/
+	textWidth = textLen * 6;
+	//free( r ); 
+	//free( s );
+	textPos = ( ( frame->width + BORDER_SIZE_LEFT + BORDER_SIZE_RIGHT ) / 2 ) - ( textWidth / 2 );
 
 	if ( frame->children.nodes[0] == windowList.nodes[0] ) {
 		SGrafDrawFill( frame->window, colorLightGrey, 0, 0, frame->width - 1, frame->height - 1 );
@@ -432,7 +430,6 @@ void RaiseClient( node_t *n ) {
 	AddNodeToList( p, &redrawList );
 	AddNodeToList( old, &redrawList );
 	xcb_configure_window( c, n->window, mask, v );
-	printf( "done\n" );
 }
 
 void SetupColors() {
@@ -545,7 +542,6 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 		p = rootNode;
 	n = CreateNode( NODE_CLIENT, win, p, width, height, x, y );
 
-
 	n->managementState = STATE_WITHDRAWN;
 
 	if ( p == rootNode && !override_redirect ) {
@@ -563,13 +559,13 @@ void ReparentWindow( xcb_window_t win, xcb_window_t parent, short x, short y, un
 		AddNodeToList( p, &windowList );
 		AddNodeToList( p, &rootNode->children );
 		p->managementState = n->managementState = STATE_REPARENTED;
-		printf( "New normal window\n");
+		dbgprintf( 2, "New normal window\n");
 	} else if ( p != rootNode ) {
 		n->managementState = STATE_CHILD;
-		printf( "New child window %x (child of %x)\n", n->window, p->window );
+		dbgprintf( 2, "New child window %x (child of %x)\n", n->window, p->window );
 	} else {
 		n->managementState = STATE_NO_REDIRECT;
-		printf( "New unreparented window\n" );
+		dbgprintf( 2, "New unreparented window\n" );
 	}
 
 	v[0] = 	XCB_EVENT_MASK_EXPOSURE | 
@@ -624,12 +620,10 @@ Event handlers
 void DoButtonPress( xcb_button_press_event_t *e ) {
 	node_t *n = GetNodeByWindow( e->event );
 
-	printf( "button press on window %x\n", e->event );
 	RaiseClient( n );
-	if ( n->type == NODE_CLIENT ) {
-		printf( "is client window\n" );	
+	if ( n->type == NODE_CLIENT )
 		return;
-	}
+
 	if ( n->type == NODE_FRAME ) {
 		if ( mouseIsOverCloseButton ) {
 			wmState = WMSTATE_CLOSE;
@@ -669,8 +663,6 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 			break;
 		case WMSTATE_CLOSE:
 			if ( mouseIsOverCloseButton == 1 ) {
-				printf( "Close window now!\n" );
-
 				xcb_client_message_event_t *msg = calloc(32, 1);
 				msg->response_type = XCB_CLIENT_MESSAGE;
 				msg->window = windowList.nodes[0]->window;
@@ -759,7 +751,7 @@ void DoMapRequest( xcb_map_request_event_t *e ) {
 		xcb_map_window( c, p->window );
 	xcb_map_window( c, n->window );
 	RaiseClient( n );
-	printf( "window %x mapped\n", e->window );
+	dbgprintf( 2, "window %x mapped\n", e->window );
 }
 
 //This is all a hack to make ReparentExistingWindows work.
@@ -805,17 +797,27 @@ void DoReparentNotify( xcb_reparent_notify_event_t *e ) {
 
 	n->managementState = STATE_REPARENTED;
 	ConfigureClient( n, n->x, n->y, n->width, n->height );
-	printf( "window %x reparented to window %x\n", e->window, e->parent );
+	dbgprintf( 1, "window %x reparented to window %x\n", e->window, e->parent );
 	return;
 }
 
 void DoConfigureRequest( xcb_configure_request_event_t *e ) {
 	node_t* n = GetNodeByWindow( e->window );
-	node_t* p = GetParentFrame( n );
-	int x = p->x;
-	int y = p->y;
-	int width = n->width;
-	int height = n->height;
+	node_t* p;
+	int x, y, width, height;
+	
+	if ( n == NULL )
+		return;
+	p = GetParentFrame( n );
+	if ( p == NULL ) {
+		x = n->x;
+		y = n->y;
+	} else {
+		x = p->x;
+		y = p->y;
+	}
+	width = n->width;
+	height = n->height;
 
 	if ( ( e->value_mask & XCB_CONFIG_WINDOW_X ) != 0 )
 		x = e->x;
@@ -853,7 +855,7 @@ void DoPropertyNotify( xcb_property_notify_event_t *e ) {
 		}	
 		free( reply );
 	} else {
-		printf( "window %x updated unknown atom %s\n", e->window, xcb_get_atom_name_name( xcb_get_atom_name_reply( c, xcb_get_atom_name( c, e->atom ), NULL ) ) );
+		dbgprintf( 1, "window %x updated unknown atom %s\n", e->window, xcb_get_atom_name_name( xcb_get_atom_name_reply( c, xcb_get_atom_name( c, e->atom ), NULL ) ) );
 	}
 }
 
@@ -865,17 +867,17 @@ void DoClientMessage( xcb_client_message_event_t *e ) {
 	nameCookie = xcb_get_atom_name( c, e->type );
 	nameReply = xcb_get_atom_name_reply( c, nameCookie, NULL );
 
-	printf( "received client message\n" );
-	printf( "format: %i\n", e->format );
-	printf( "type: %s\n", xcb_get_atom_name_name( nameReply ) );
+	dbgprintf( 2, "received client message\n" );
+	dbgprintf( 2, "format: %i\n", e->format );
+	dbgprintf( 2, "type: %s\n", xcb_get_atom_name_name( nameReply ) );
 	if ( !strcmp( xcb_get_atom_name_name( nameReply ), "_NET_WM_STATE" ) ) {
-		printf( "message is _NET_WM_STATE\n" );
+		dbgprintf( 2, "message is _NET_WM_STATE\n" );
 		for ( i = 0; i < 3; i++ ) {
 			if ( e->data.data32[i] == 0 )
 				break;
 			nameCookie = xcb_get_atom_name( c, e->data.data32[i] );
 			nameReply = xcb_get_atom_name_reply( c, nameCookie, NULL );
-			printf( "data[i]: %s\n", xcb_get_atom_name_name( nameReply ) );
+			dbgprintf( 2, "data[i]: %s\n", xcb_get_atom_name_name( nameReply ) );
 		}
 	}
 }
@@ -893,15 +895,15 @@ int main( int argc, char** argv ) {
 	printf( "%s %s, build %s\n\n", PROGRAM_NAME, VERSION_STRING, VERSION_BUILDSTR );
 
 	if ( SulfurInit( NULL ) != 0 ) {
-			printf( "Problem starting up. Is X running?\n" );
+			fprintf( stderr, "Problem starting up. Is X running?\n" );
 			Cleanup();
 			return 1;
 	}
 	c = sulfurGetXcbConn();
 	screen = sulfurGetXcbScreen();
 	if ( BecomeWM() < 0 ) {
-		printf( "it looks like another wm is running.\n" );
-		printf( "you will need to close it before you can run makron.\n" );
+		fprintf( stderr, "it looks like another wm is running.\n" );
+		fprintf( stderr, "you will need to close it before you can run makron.\n" );
 		Cleanup();
 		return 1;
 	}
@@ -919,7 +921,7 @@ int main( int argc, char** argv ) {
 	ReparentExistingWindows();
 
 	while( !xcb_connection_has_error( c ) ) {
-		while( ( e = xcb_poll_for_event( c ) ) != NULL ) {
+		while( !xcb_connection_has_error( c ) && ( ( e = xcb_poll_for_event( c ) ) != NULL ) ) {
 			switch( e->response_type & ~0x80 ) {
 				case XCB_BUTTON_PRESS: 		DoButtonPress( (xcb_button_press_event_t *)e ); break;
 				case XCB_BUTTON_RELEASE: 	DoButtonRelease( (xcb_button_release_event_t *)e ); break;
@@ -935,15 +937,16 @@ int main( int argc, char** argv ) {
 				case XCB_CONFIGURE_REQUEST: DoConfigureRequest( (xcb_configure_request_event_t *)e ); break;
 				case XCB_PROPERTY_NOTIFY: 	DoPropertyNotify( (xcb_property_notify_event_t *)e ); break;
 				case XCB_CLIENT_MESSAGE: 	DoClientMessage( (xcb_client_message_event_t *)e ); break;
-				default: 					dprintf( 1, "warning, unhandled event #%d\n", e->response_type & ~0x80 ); break;
+				default: 					dbgprintf( 1, "warning, unhandled event #%d\n", e->response_type & ~0x80 ); break;
 			}
+			xcb_flush( c );
 			free( e );
 		}
 		while ( redrawList.nodes[0] != NULL ) {
 			DrawFrame( redrawList.nodes[0] );
 			RemoveNodeFromList( redrawList.nodes[0], &redrawList );
+			xcb_flush( c );
 		}
-		xcb_flush( c );
 	}
 	Cleanup();
 	printf( "connection closed. goodbye!\n" );
