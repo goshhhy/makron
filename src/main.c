@@ -15,7 +15,7 @@
 #define VERSION_MINOR 2
 #define VERSION_PATCH 0
 #define VERSION_STRING "0.2.0"
-#define VERSION_BUILDSTR "40"
+#define VERSION_BUILDSTR "41"
 
 #define BORDER_SIZE_LEFT 1
 #define BORDER_SIZE_RIGHT 1
@@ -246,6 +246,7 @@ void DestroyNode( node_t* n ) {
 	}
 
 	RemoveNodeFromList( n, &windowList );
+	RemoveNodeFromList( n, &redrawList );
 	RemoveNodeFromList( n, &n->parent->children );
 	xcb_destroy_window( c, n->window );
 
