@@ -3,16 +3,12 @@
 #include <signal.h>
 #include <string.h>
 #include <stdarg.h>
-#include <assert.h>
-#include <unistd.h>
-#include <xcb/xcb.h>
-#include <xcb/xcb_atom.h>
 #include <sulfur/sulfur.h>
 
 #define PROGRAM_NAME "makron"
 
-#define VERSION_STRING "0.2.0"
-#define VERSION_BUILDSTR "41"
+#define VERSION_STRING "0.2.0-pre"
+#define VERSION_BUILDSTR "42"
 
 #define BORDER_SIZE_LEFT 1
 #define BORDER_SIZE_RIGHT 1
@@ -873,7 +869,7 @@ int main( int argc, char** argv ) {
 	signal( SIGTERM, Quit );
 	signal( SIGINT, Quit );
 
-	printf( "%s %s, build %s\n\n", PROGRAM_NAME, VERSION_STRING, VERSION_BUILDSTR );
+	printf( "%s %s build %s\n\n", PROGRAM_NAME, VERSION_STRING, VERSION_BUILDSTR );
 
 	if ( SulfurInit( NULL ) != 0 ) {
 			fprintf( stderr, "Problem starting up. Is X running?\n" );
