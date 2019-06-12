@@ -494,6 +494,7 @@ void SetRootBackground() {
 	
 	xcb_change_window_attributes( c, screen->root, XCB_CW_BACK_PIXMAP, v );
 	xcb_clear_area( c, 1, screen->root, 0, 0, w, h );
+	xcb_free_pixmap( c, pixmap );
 }
 
 void SetupRoot() {
