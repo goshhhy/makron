@@ -113,6 +113,7 @@ resizeDir_t resizeDir;
 nodeList_t windowList; // list of all windows, in most recently raised order
 nodeList_t redrawList; // list of all windows needing redrawn
 
+int spawnx = 40, spawny = 40, spawnxdir = 20, spawnydir = 20;
 
 /*
 =================
@@ -512,7 +513,7 @@ void SetRootBackground() {
 }
 
 void SetupRoot() {
-	rootNode = CreateNode( NODE_ROOT, screen->root, NULL, 0, 0, 0, 0 );
+	rootNode = CreateNode( NODE_ROOT, screen->root, NULL, screen->width_in_pixels, screen->height_in_pixels, 0, 0 );
 	AddNodeToList(rootNode, &windowList );
 	SetRootBackground();
 }
@@ -733,7 +734,22 @@ void DoExpose( xcb_expose_event_t *e ) {
 }
 
 void DoCreateNotify( xcb_create_notify_event_t *e ) {
-	ReparentWindow( e->window, e->parent, e->x, e->y, e->width, e->height, e->override_redirect );
+	int x = e->x, y = e->y;
+	if ( ( e->override_redirect == 0 ) && ( e->x == 0 ) && ( e->y == 0 ) ) {
+		x = spawnx;
+		y = spawny;
+		spawnx += spawnxdir;
+		spawny += spawnydir;
+		if ( ( spawnx > rootNode->width ) || spawnx < 0 ) {
+			spawnxdir = spawnxdir * -1;
+			spawnx += ( spawnxdir * 2 );
+		}
+		if ( ( spawny > rootNode->height ) || spawny < 40 ) {
+			spawnydir = spawnydir * -1;
+			spawny += ( spawnydir * 2 );
+		}
+	}
+	ReparentWindow( e->window, e->parent, x, y, e->width, e->height, e->override_redirect );
 }
 
 void DoDestroy( xcb_destroy_notify_event_t *e ) {
