@@ -85,8 +85,12 @@ sulfurColor_t colorDarkAccent;
 
 unsigned int inactiveFontContext;
 unsigned int activeFontContext;
+unsigned int cursorContext;
 
 xcb_font_t windowFont;
+xcb_font_t cursorFont;
+xcb_cursor_t cursor;
+int lastCursor;
 
 xcb_atom_t WM_DELETE_WINDOW;
 xcb_atom_t WM_PROTOCOLS;
@@ -426,31 +430,40 @@ void SetupAtoms() {
 	WM_PROTOCOLS = xcb_intern_atom_reply( c, xcb_intern_atom( c, 0, strlen( "WM_PROTOCOLS" ), "WM_PROTOCOLS" ), NULL )->atom;
 }
 
-void SetupFonts() {
-	unsigned int v[3];
+void SetupFontGc( xcb_gc_t* ctx, sulfurColor_t fg, sulfurColor_t bg, xcb_font_t font ) {
+	unsigned int v[3] = { fg, bg, font };
+	*ctx = xcb_generate_id( c );
+	xcb_create_gc( c, *ctx, screen->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND, v );
+}
 
+void SetupFonts() {
 	windowFont = xcb_generate_id( c );
 	xcb_open_font( c, windowFont, strnlen( FONT_NAME, 256 ), FONT_NAME );
 
-	v[2] = windowFont;
+	cursorFont = xcb_generate_id( c );
+	xcb_open_font( c, cursorFont, strlen( "cursor" ), "cursor" );
 
-	activeFontContext = xcb_generate_id( c );
-	v[0] = colorBlack;
-	v[1] = colorLightGrey;
-	xcb_create_gc( c, activeFontContext, screen->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT, v );
-
-	inactiveFontContext = xcb_generate_id( c );
-	v[0] = colorDarkGrey;
-	v[1] = colorWhite;
-	xcb_create_gc( c, inactiveFontContext, screen->root, XCB_GC_FOREGROUND | XCB_GC_BACKGROUND | XCB_GC_FONT, v );
+	SetupFontGc( &activeFontContext, colorBlack, colorLightGrey, windowFont );
+	SetupFontGc( &inactiveFontContext, colorDarkGrey, colorWhite, windowFont );
+	SetupFontGc( &cursorContext, colorBlack, colorWhite, cursorFont );
 }
 
-int BecomeWM(  ) {
+void SetCursor( int cur ) {
+	if ( cur != lastCursor ) {
+		cursor = xcb_generate_id( c );
+		xcb_create_glyph_cursor ( c, cursor, cursorFont, cursorFont, cur, cur + 1, 0, 0, 0, 65535, 65535, 65535);
+		xcb_change_window_attributes ( c, rootNode->window, XCB_CW_CURSOR, &cursor );
+		xcb_free_cursor( c, cursor );
+		cur = lastCursor;
+	}
+}
+
+int BecomeWM( void ) {
 	unsigned int v[1];
 	xcb_void_cookie_t cookie;
 	xcb_generic_error_t *error;
 
-	v[0] = XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
+	v[0] = XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_SUBSTRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT;
 	cookie = xcb_change_window_attributes_checked( c, screen->root, XCB_CW_EVENT_MASK, v );
 	error = xcb_request_check( c, cookie );
 	if ( error ) {
@@ -495,6 +508,7 @@ void SetRootBackground() {
 	xcb_change_window_attributes( c, screen->root, XCB_CW_BACK_PIXMAP, v );
 	xcb_clear_area( c, 1, screen->root, 0, 0, w, h );
 	xcb_free_pixmap( c, pixmap );
+	xcb_free_pixmap( c, fill );
 }
 
 void SetupRoot() {
@@ -629,6 +643,7 @@ void DoButtonPress( xcb_button_press_event_t *e ) {
 }
 
 void DoButtonRelease( xcb_button_release_event_t *e ) {
+	SetCursor( 68 );
 	switch ( wmState ) {
 		case WMSTATE_IDLE:
 			break;
@@ -664,8 +679,8 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 }
 
 void DoMotionNotify( xcb_motion_notify_event_t *e ) {
-	int x;
-	int y;
+	node_t* n;
+	int x, y, w, h;
 
 	mouseLastKnownX = e->root_x;
 	mouseLastKnownY = e->root_y;
@@ -677,23 +692,39 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 		}
 	}
 
-	if ( wmState == WMSTATE_CLOSE ) {
-		AddNodeToList( windowList.nodes[0], &redrawList );
-	}
-
-	if ( wmState == WMSTATE_DRAG ) {
-		x = e->root_x - dragStartX;
-		y =  e->root_y - dragStartY;
-		int w = dragClient->children.nodes[0]->width;
-		int h = dragClient->children.nodes[0]->height;
-		ConfigureClient( dragClient->children.nodes[0], x, y, w, h );
-	}
-	if ( wmState == WMSTATE_RESIZE ) {
-		x = dragClient->x;
-		y = dragClient->y;
-		int w = dragClient->children.nodes[0]->x + ( e->root_x - x ) - 1;
-		int h = dragClient->children.nodes[0]->y + ( e->root_y - y ) - 1;
-		ConfigureClient( dragClient->children.nodes[0], x, y, w, h );
+	switch ( wmState ) {
+		case WMSTATE_CLOSE:
+			AddNodeToList( windowList.nodes[0], &redrawList );
+			break;
+		case WMSTATE_DRAG:
+			x = e->root_x - dragStartX;
+			y =  e->root_y - dragStartY;
+			w = dragClient->children.nodes[0]->width;
+			h = dragClient->children.nodes[0]->height;
+			ConfigureClient( dragClient->children.nodes[0], x, y, w, h );
+			return;
+		case WMSTATE_RESIZE:
+			x = dragClient->x;
+			y = dragClient->y;
+			w = dragClient->children.nodes[0]->x + ( e->root_x - x ) - 1;
+			h = dragClient->children.nodes[0]->y + ( e->root_y - y ) - 1;
+			ConfigureClient( dragClient->children.nodes[0], x, y, w, h );
+			return;
+		default:
+			n = GetNodeByWindow( e->event );
+			if ( ( n != NULL ) && ( n->type == NODE_FRAME ) ) {
+				if ( e->event_x > n->width - 8 || e->event_y > n->height - 8 ) {
+					if ( e->event_x > n->width - 8 && e->event_y > n->height - 8 ) {
+						SetCursor( 14 );
+					} else if ( e->event_x > n->width - 8 ) {
+						SetCursor( 108 );
+					} else {
+						SetCursor( 116 );
+					}
+				}
+			} else {
+				SetCursor( 68 );
+			}
 	}
 }
 
@@ -896,6 +927,7 @@ int main( int argc, char** argv ) {
 	SetupColors();
 	SetupFonts();
 	SetupRoot();
+	SetCursor( 68 );
 	ReparentExistingWindows();
 
 	e = xcb_wait_for_event( c );
