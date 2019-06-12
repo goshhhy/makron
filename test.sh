@@ -7,11 +7,19 @@ sleep 0.1
 
 export DISPLAY=:10
 ./build/makron &
-xclock &
-xeyes &
-xload &
+cinnabar &
+barpid=$!
+sleep 0.25
 xterm &
-wait $!
+termpid=$!
+sleep 0.25
+xclock &
+sleep 0.25
+xeyes &
+sleep 0.25
+xload &
+wait $termpid
 
+kill $barpid
 kill $xpid
 
