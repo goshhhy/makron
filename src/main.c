@@ -3,7 +3,11 @@
 #include <signal.h>
 #include <string.h>
 #include <stdarg.h>
+#include <pwd.h>
+
 #include <sulfur/sulfur.h>
+
+#include <iniparser/iniparser.h>
 
 #define PROGRAM_NAME "makron"
 
@@ -112,6 +116,9 @@ resizeDir_t resizeDir;
 
 nodeList_t windowList; // list of all windows, in most recently raised order
 nodeList_t redrawList; // list of all windows needing redrawn
+
+char *homedir;
+dictionary *dict;
 
 int spawnx = 40, spawny = 40, spawnxdir = 20, spawnydir = 20;
 
@@ -415,15 +422,83 @@ void RaiseClient( node_t *n ) {
 	xcb_configure_window( c, n->window, mask, v );
 }
 
+sulfurColor_t GetDarkColor( const char* name ) {
+	if ( !strncmp( name, "bluebell", 16 ) ) {
+		return SGrafColor( 0xcc * 45 / 100, 0xcc * 45 / 100, 0xff * 45 / 100 );
+	} else if ( !strncmp( name, "gold", 16 ) ) {
+		return SGrafColor( 0xff * 45 / 100, 0xcc * 45 / 100, 0x99 * 45 / 100 );
+	} else if ( !strncmp( name, "green", 16 ) ) {
+		return SGrafColor( 0x99 * 45 / 100, 0xcc * 45 / 100, 0x99 * 45 / 100 );
+	} else if ( !strncmp( name, "turquoise", 16 ) ) {
+		return SGrafColor( 0x99 * 45 / 100, 0xff * 45 / 100, 0xff * 45 / 100 );
+	} else if ( !strncmp( name, "red", 16 ) ) {
+		return SGrafColor( 0xff * 45 / 100, 0xcc * 45 / 100, 0xcc * 45 / 100 );
+	} else if ( !strncmp( name, "pink", 16 ) ) {
+		return SGrafColor( 0xff * 45 / 100, 0xcc * 45 / 100, 0xff * 45 / 100 );
+	} else if ( !strncmp( name, "blue", 16 ) ) {
+		return SGrafColor( 0x99 * 45 / 100, 0xcc * 45 / 100, 0xff * 45 / 100 );
+	} else if ( !strncmp( name, "grey", 16 ) || !strncmp( name, "gray", 16 ) ) {
+		return SGrafColor( 0xdd * 45 / 100, 0xdd * 45 / 100, 0xdd * 45 / 100 );
+	} else {
+		return SGrafColor( 0xcc * 45 / 100, 0xcc * 45 / 100, 0xff * 45 / 100 );
+	}
+}
+
+sulfurColor_t GetColor( const char* name ) {
+	if ( !strncmp( name, "bluebell", 16 ) ) {
+		return SGrafColor( 0xcc * 85 / 100, 0xcc * 85 / 100, 0xff * 85 / 100 );
+	} else if ( !strncmp( name, "gold", 16 ) ) {
+		return SGrafColor( 0xff * 85 / 100, 0xcc * 85 / 100, 0x99 * 85 / 100 );
+	} else if ( !strncmp( name, "green", 16 ) ) {
+		return SGrafColor( 0x99 * 85 / 100, 0xcc * 85 / 100, 0x99 * 85 / 100 );
+	} else if ( !strncmp( name, "turquoise", 16 ) ) {
+		return SGrafColor( 0x99 * 85 / 100, 0xff * 85 / 100, 0xff * 85 / 100 );
+	} else if ( !strncmp( name, "red", 16 ) ) {
+		return SGrafColor( 0xff * 85 / 100, 0xcc * 85 / 100, 0xcc * 85 / 100 );
+	} else if ( !strncmp( name, "pink", 16 ) ) {
+		return SGrafColor( 0xff * 85 / 100, 0xcc * 85 / 100, 0xff * 85 / 100 );
+	} else if ( !strncmp( name, "blue", 16 ) ) {
+		return SGrafColor( 0x99 * 85 / 100, 0xcc * 85 / 100, 0xff * 85 / 100 );
+	} else if ( !strncmp( name, "grey", 16 ) || !strncmp( name, "gray", 16 ) ) {
+		return SGrafColor( 0xdd * 85 / 100, 0xdd * 85 / 100, 0xdd * 85 / 100 );
+	} else {
+		return SGrafColor( 0xcc * 85 / 100, 0xcc * 85 / 100, 0xff * 85 / 100 );
+	}
+}
+
+sulfurColor_t GetLightColor( const char* name ) {
+	if ( !strncmp( name, "bluebell", 16 ) ) {
+		return SGrafColor( 0xcc, 0xcc, 0xff );
+	} else if ( !strncmp( name, "gold", 16 ) ) {
+		return SGrafColor( 0xff, 0xcc, 0x99 );
+	} else if ( !strncmp( name, "green", 16 ) ) {
+		return SGrafColor( 0x99, 0xcc, 0x99 );
+	} else if ( !strncmp( name, "turquoise", 16 ) ) {
+		return SGrafColor( 0x99, 0xff, 0xff );
+	} else if ( !strncmp( name, "red", 16 ) ) {
+		return SGrafColor( 0xff, 0xcc, 0xcc );
+	} else if ( !strncmp( name, "pink", 16 ) ) {
+		return SGrafColor( 0xff, 0xcc, 0xff );
+	} else if ( !strncmp( name, "blue", 16 ) ) {
+		return SGrafColor( 0x99, 0xcc, 0xff );
+	} else if ( !strncmp( name, "grey", 16 ) || !strncmp( name, "gray", 16 ) ) {
+		return SGrafColor( 0xdd, 0xdd, 0xdd );
+	} else {
+		return SGrafColor( 0xcc, 0xcc, 0xff );
+	}
+}
+
 void SetupColors() {
+	const char* accent = iniparser_getstring( dict, "colors:accent", "bluebell" );
+	dbgprintf( 2, "accent color is %s\n", accent );
 	colorWhite = SULFUR_COLOR_WHITE;
 	colorLightGrey = SGrafColor( 0xef, 0xef, 0xef );
 	colorGrey = SGrafColor( 0xa5, 0xa5, 0xa5 );
 	colorDarkGrey = SGrafColor( 0x73, 0x73, 0x73 );
 	colorBlack = SULFUR_COLOR_BLACK;
-	colorLightAccent = SGrafColor( 0xcf, 0xcf, 0xff );
-	colorAccent = SGrafColor( 0xa7, 0xa7, 0xd7 );
-	colorDarkAccent = SGrafColor( 0x2d, 0x2d, 0x63 );
+	colorLightAccent = GetLightColor( accent );
+	colorAccent = GetColor( accent );
+	colorDarkAccent = GetDarkColor( accent );
 }
 
 void SetupAtoms() {	
@@ -904,6 +979,12 @@ void DoClientMessage( xcb_client_message_event_t *e ) {
 			nameReply = xcb_get_atom_name_reply( c, nameCookie, NULL );
 			dbgprintf( 2, "data[i]: %s\n", xcb_get_atom_name_name( nameReply ) );
 		}
+	} else if ( !strcmp( xcb_get_atom_name_name( nameReply ), "_MAKRON_RELOAD" ) ) {
+		dbgprintf( 2, "reloading config\n" );
+		dict = iniparser_load( ".makronrc" );
+		SetupColors();
+		iniparser_freedict( dict );
+		AddNodeToList( windowList.nodes[0], &redrawList );
 	}
 }
 
@@ -926,6 +1007,7 @@ int main( int argc, char** argv ) {
 	}
 	c = sulfurGetXcbConn();
 	screen = sulfurGetXcbScreen();
+
 	if ( BecomeWM() < 0 ) {
 		fprintf( stderr, "it looks like another wm is running.\n" );
 		fprintf( stderr, "you will need to close it before you can run makron.\n" );
@@ -939,12 +1021,26 @@ int main( int argc, char** argv ) {
 	redrawList.max = 4;
 	redrawList.nodes = calloc( redrawList.max, sizeof ( node_t* ) );
 
+	homedir = getenv( "HOME" );
+	if ( !homedir ) {
+		struct passwd *pw = getpwuid( getuid() );
+		homedir = pw->pw_dir;
+	}
+	if ( homedir ) {
+		chdir( homedir );
+	}
+
+	dict = iniparser_load( ".makronrc" );
+	if ( !dict ) {
+		fprintf( stderr, "couldn't open .makronrc\n" );
+	}
 	SetupAtoms();
 	SetupColors();
 	SetupFonts();
 	SetupRoot();
 	SetCursor( 68 );
 	ReparentExistingWindows();
+	iniparser_freedict( dict );
 
 	e = xcb_wait_for_event( c );
 	while( !xcb_connection_has_error( c ) ) {
