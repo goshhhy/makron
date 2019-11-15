@@ -495,6 +495,7 @@ int BecomeWM( void ) {
 } 
 
 void SetRootBackground() {
+	return;
 	int w = screen->width_in_pixels, h = screen->height_in_pixels;
 	xcb_pixmap_t fill = xcb_generate_id( c );
 	xcb_pixmap_t pixmap = xcb_generate_id( c );
@@ -1025,7 +1026,6 @@ int main( int argc, char** argv ) {
 		while ( redrawList.nodes[0] != NULL ) {
 			DrawFrame( redrawList.nodes[0] );
 			RemoveNodeFromList( redrawList.nodes[0], &redrawList );
-			SetRootBackground();
 		}
 		xcb_flush( c );
 		e = xcb_wait_for_event( c );
