@@ -670,7 +670,8 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 			break;
 		case WMSTATE_DRAG:
 		case WMSTATE_RESIZE:
-			ConfigureClient( dragClient->children.nodes[0], dragNewX, dragNewY, dragNewW, dragNewH );
+			if ( dragChanged )
+				ConfigureClient( dragClient->children.nodes[0], dragNewX, dragNewY, dragNewW, dragNewH );
 			dragChanged = false;
 			wmState = WMSTATE_IDLE;
 			resizeDir = RESIZE_NONE;
