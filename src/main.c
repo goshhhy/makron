@@ -3,73 +3,14 @@
 #include <signal.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <pwd.h>
 
 #include <sulfur/sulfur.h>
 
 #include <iniparser/iniparser.h>
 
-#define PROGRAM_NAME "makron"
-
-#define VERSION_STRING "0.2.0-pre"
-#define VERSION_BUILDSTR "42"
-
-#define BORDER_SIZE_LEFT 1
-#define BORDER_SIZE_RIGHT 1
-#define BORDER_SIZE_TOP 19
-#define BORDER_SIZE_BOTTOM 1
-
-#define FONT_NAME "fixed"
-
-typedef enum {
-	STATE_WITHDRAWN = 0,
-	STATE_ICON = 1,
-	STATE_NORMAL = 3,
-} clientWindowState_t;
-
-typedef enum {
-	STATE_INIT,
-	STATE_NO_REDIRECT, //override redirect
-	STATE_REPARENTED,
-	STATE_CHILD,
-	STATE_TRANSIENT
-} clientManagementState_t;
-
-typedef enum {
-	WMSTATE_IDLE,
-	WMSTATE_DRAG,
-	WMSTATE_RESIZE,
-	WMSTATE_CLOSE
-} wmState_t;
-
-typedef enum {
-	NODE_ROOT,
-	NODE_CLIENT,
-	NODE_FRAME,
-	NODE_GROUP,
-} nodeType_t;
-
-struct node_s;
-
-typedef struct nodeList_s {
-	struct node_s** nodes;
-	int max;
-} nodeList_t;
-
-typedef struct node_s {
-	nodeType_t type;
-	xcb_window_t window;
-	char name[256];
-	short x, y, width, height;
-
-	struct node_s* parent;
-	struct nodeList_s children;
-	char parentMapped;
-	
-	clientWindowState_t windowState;
-	clientManagementState_t managementState;
-	//todo: gravity
-} node_t;
+#include "m_common.h"
 
 node_t *rootNode = NULL;
 xcb_connection_t *c;
@@ -107,8 +48,9 @@ typedef enum {
 
 wmState_t wmState = WMSTATE_IDLE;
 node_t *dragClient;
-short dragStartX;
-short dragStartY;
+bool dragChanged = false;
+short dragStartX, dragStartY;
+short dragNewX, dragNewY, dragNewW, dragNewH;
 short mouseLastKnownX;
 short mouseLastKnownY;
 short mouseIsOverCloseButton;
@@ -399,7 +341,7 @@ void RaiseClient( node_t *n ) {
 	node_t* p = GetParentFrame( n );
 	node_t* old = GetParentFrame( windowList.nodes[0] );
 	int i;
-
+	
 	if ( n == p )
 		n = p->children.nodes[0];
 
@@ -407,18 +349,21 @@ void RaiseClient( node_t *n ) {
 		return;
 
 	for ( i = 0; ( i < windowList.max ) && ( windowList.nodes[i] != NULL ) && ( windowList.nodes[i] != n ); i++ ) ;;
-	if ( i >= windowList.max || windowList.nodes[i] == NULL )
+	if ( i >= windowList.max || windowList.nodes[i] == NULL ) {
 		return;
+	}
 
 	for ( ; i >= 1 ; i-- )
 		windowList.nodes[i] = windowList.nodes[i - 1];
 
 	windowList.nodes[0] = n;
 
-	xcb_set_input_focus( c, XCB_INPUT_FOCUS_NONE, n->window, 0 );
+	xcb_set_input_focus( c, XCB_INPUT_FOCUS_POINTER_ROOT, n->window, XCB_CURRENT_TIME );
 
 	AddNodeToList( p, &redrawList );
 	AddNodeToList( old, &redrawList );
+	if ( p )
+		xcb_configure_window( c, p->window, mask, v );
 	xcb_configure_window( c, n->window, mask, v );
 }
 
@@ -725,6 +670,8 @@ void DoButtonRelease( xcb_button_release_event_t *e ) {
 			break;
 		case WMSTATE_DRAG:
 		case WMSTATE_RESIZE:
+			ConfigureClient( dragClient->children.nodes[0], dragNewX, dragNewY, dragNewW, dragNewH );
+			dragChanged = false;
 			wmState = WMSTATE_IDLE;
 			resizeDir = RESIZE_NONE;
 			dragClient = NULL;
@@ -773,18 +720,24 @@ void DoMotionNotify( xcb_motion_notify_event_t *e ) {
 			AddNodeToList( windowList.nodes[0], &redrawList );
 			break;
 		case WMSTATE_DRAG:
-			x = e->root_x - dragStartX;
-			y =  e->root_y - dragStartY;
-			w = dragClient->children.nodes[0]->width;
-			h = dragClient->children.nodes[0]->height;
-			ConfigureClient( dragClient->children.nodes[0], x, y, w, h );
+			dragNewX = e->root_x - dragStartX;
+			dragNewY =  e->root_y - dragStartY;
+			dragNewW = dragClient->children.nodes[0]->width;
+			dragNewH = dragClient->children.nodes[0]->height;
+			dragChanged = true;
 			return;
 		case WMSTATE_RESIZE:
-			x = dragClient->x;
-			y = dragClient->y;
-			w = dragClient->children.nodes[0]->x + ( e->root_x - x ) - 1;
-			h = dragClient->children.nodes[0]->y + ( e->root_y - y ) - 1;
-			ConfigureClient( dragClient->children.nodes[0], x, y, w, h );
+			dragNewX = dragClient->x;
+			dragNewY = dragClient->y;
+			dragNewW = e->root_x - ( dragNewX + BORDER_SIZE_LEFT );
+			dragNewH = e->root_y - ( dragNewY + BORDER_SIZE_TOP );
+			if ( dragNewH < 16 )
+				dragNewH = 16;
+			if ( dragNewW < 16 )
+				dragNewW = 16;
+			dragChanged = true;
+			printf("resize w%hi h%hi\n", dragNewW, dragNewH );
+			printf( "dcX %hi dcY %hi nX %hi nY %hi\n", dragNewX, dragNewY, dragClient->children.nodes[0]->x, dragClient->children.nodes[0]->y );
 			return;
 		default:
 			n = GetNodeByWindow( e->event );
@@ -1064,6 +1017,10 @@ int main( int argc, char** argv ) {
 			}
 			free( e );
 		} while( !xcb_connection_has_error( c ) && ( ( e = xcb_poll_for_event( c ) ) != NULL ) );
+		if ( dragClient && dragChanged ) {
+			ConfigureClient( dragClient->children.nodes[0], dragNewX, dragNewY, dragNewW, dragNewH );
+			dragChanged = false;
+		}
 		while ( redrawList.nodes[0] != NULL ) {
 			DrawFrame( redrawList.nodes[0] );
 			RemoveNodeFromList( redrawList.nodes[0], &redrawList );
